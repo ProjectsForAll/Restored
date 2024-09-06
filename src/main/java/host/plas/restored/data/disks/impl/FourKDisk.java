@@ -1,0 +1,13 @@
+package host.plas.restored.data.disks.impl;
+
+import host.plas.restored.data.disks.StorageDisk;
+
+import java.math.BigInteger;
+
+public class FourKDisk extends StorageDisk {
+    public FourKDisk(String identifier) {
+        super(identifier);
+
+        setCapacity(BigInteger.valueOf(4096));
+    }
+}

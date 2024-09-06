@@ -1,13 +1,11 @@
-package host.plas.exampleproject.config;
+package host.plas.restored.config;
 
-import host.plas.exampleproject.ExampleProject;
+import host.plas.restored.Restored;
 import tv.quaint.storage.resources.flat.simple.SimpleConfiguration;
-
-import java.io.File;
 
 public class MainConfig extends SimpleConfiguration {
     public MainConfig() {
-        super("config.yml", ExampleProject.getInstance(), false);
+        super("config.yml", Restored.getInstance(), false);
     }
 
     @Override

@@ -1,4 +1,4 @@
-package host.plas.exampleproject.managers;
+package host.plas.restored.managers;
 
 import io.streamlined.bukkit.instances.BaseRunnable;
 import lombok.Getter;
@@ -49,7 +49,7 @@ public class NotificationTimer extends BaseRunnable {
     private Player player;
 
     private NotificationTimer(String identifier, Player player) {
-        super(5 * 20, 1, true); // 5 second delayed then cancels. Asynchronous.
+        super(1, 1, true); // 5 second delayed then cancels. Asynchronous.
 
         this.identifier = identifier;
         this.player = player;
