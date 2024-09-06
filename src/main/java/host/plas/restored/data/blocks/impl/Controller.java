@@ -1,13 +1,14 @@
 package host.plas.restored.data.blocks.impl;
 
+import host.plas.bou.commands.Sender;
+import host.plas.bou.gui.InventorySheet;
+import host.plas.bou.gui.screens.blocks.ScreenBlock;
+import host.plas.bou.utils.ColorUtils;
 import host.plas.restored.data.Network;
 import host.plas.restored.data.blocks.BlockType;
-import host.plas.restored.data.blocks.ScreenBlock;
+import host.plas.restored.data.blocks.NetworkBlock;
 import host.plas.restored.data.blocks.datablock.DataBlock;
 import host.plas.restored.data.items.impl.ControllerItem;
-import host.plas.restored.data.screens.InventorySheet;
-import host.plas.restored.utils.MessageUtils;
-import io.streamlined.bukkit.commands.Sender;
 import lombok.Getter;
 import lombok.Setter;
 import mc.obliviate.inventory.Icon;
@@ -21,7 +22,7 @@ import java.util.List;
 import java.util.Optional;
 
 @Getter @Setter
-public class Controller extends ScreenBlock {
+public class Controller extends NetworkBlock {
     public Controller(Network network, Location location) {
         super(BlockType.CONTROLLER, network, location, ControllerItem::new);
     }
@@ -54,7 +55,7 @@ public class Controller extends ScreenBlock {
 
         Icon icon = new Icon(stack);
 
-        icon.setName(MessageUtils.colorize("&bController Heart"));
+        icon.setName(ColorUtils.colorizeHard("&bController Heart"));
         icon.setLore(getMainIconLore(player, block));
 
         return icon;
@@ -71,14 +72,14 @@ public class Controller extends ScreenBlock {
 
         List<String> lore = new ArrayList<>();
 
-        lore.add(MessageUtils.colorize("&7Owner of this network&8: &c" + network.getOwner().getName()));
-        lore.add(MessageUtils.colorize("&7Network ID&8: &c" + network.getIdentifier()));
+        lore.add(ColorUtils.colorizeHard("&7Owner of this network&8: &c" + network.getOwner().getName()));
+        lore.add(ColorUtils.colorizeHard("&7Network ID&8: &c" + network.getIdentifier()));
 
         return lore;
     }
 
     @Override
     public String buildTitle(Player player, ScreenBlock block) {
-        return MessageUtils.colorize("&cDrive");
+        return ColorUtils.colorizeHard("&cDrive");
     }
 }

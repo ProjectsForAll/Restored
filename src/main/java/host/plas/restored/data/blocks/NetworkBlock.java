@@ -1,5 +1,6 @@
 package host.plas.restored.data.blocks;
 
+import host.plas.bou.gui.screens.blocks.ScreenBlock;
 import host.plas.restored.data.Network;
 import host.plas.restored.data.NetworkManager;
 import host.plas.restored.data.blocks.datablock.DataBlock;
@@ -11,28 +12,24 @@ import org.bukkit.Location;
 import org.bukkit.block.Block;
 import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.inventory.ItemStack;
-import org.jetbrains.annotations.NotNull;
 
 import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Supplier;
 
 @Getter @Setter
-public abstract class NetworkBlock implements Comparable<NetworkBlock>, IDatalizable {
+public abstract class NetworkBlock extends ScreenBlock implements IDatalizable {
+    private String identifier;
     private BlockType type;
-    private UUID uuid;
     private Optional<Network> network;
     private Location location;
     private Supplier<RestoredItem> itemGetter;
     private DataBlock dataBlock;
 
-    public String getIdentifier() {
-        return uuid.toString();
-    }
-
     public NetworkBlock(BlockType type, UUID uuid, Network network, Location location, Supplier<RestoredItem> itemGetter) {
+        super(type, location);
         this.type = type;
-        this.uuid = uuid;
+        this.identifier = uuid.toString();
         if (network == null) {
             this.network = Optional.empty();
         } else {
@@ -47,8 +44,9 @@ public abstract class NetworkBlock implements Comparable<NetworkBlock>, IDataliz
     }
 
     public NetworkBlock(BlockType type, UUID uuid, Network network, Location location, Supplier<RestoredItem> itemGetter, DataBlock dataBlock) {
+        super(type, location);
         this.type = type;
-        this.uuid = uuid;
+        this.identifier = uuid.toString();
         if (network == null) {
             this.network = Optional.empty();
         } else {
@@ -110,23 +108,6 @@ public abstract class NetworkBlock implements Comparable<NetworkBlock>, IDataliz
     public void onTick() {
         if (isTickable()) {
             ((Tickable) this).onTick();
-        }
-    }
-
-    @Override
-    public int compareTo(@NotNull NetworkBlock o) {
-        if (location.getWorld().getName().equals(o.getLocation().getWorld().getName())) {
-            if (location.getBlockX() == o.getLocation().getBlockX()) {
-                if (location.getBlockY() == o.getLocation().getBlockY()) {
-                    return Integer.compare(location.getBlockZ(), o.getLocation().getBlockZ());
-                } else {
-                    return Integer.compare(location.getBlockY(), o.getLocation().getBlockY());
-                }
-            } else {
-                return Integer.compare(location.getBlockX(), o.getLocation().getBlockX());
-            }
-        } else {
-            return location.getWorld().getName().compareTo(o.getLocation().getWorld().getName());
         }
     }
 

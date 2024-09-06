@@ -1,17 +1,18 @@
 package host.plas.restored.data.blocks.impl;
 
+import host.plas.bou.commands.Sender;
+import host.plas.bou.gui.InventorySheet;
+import host.plas.bou.gui.ScreenManager;
+import host.plas.bou.gui.screens.ScreenInstance;
+import host.plas.bou.gui.screens.blocks.ScreenBlock;
+import host.plas.bou.utils.ColorUtils;
 import host.plas.restored.Restored;
 import host.plas.restored.data.Network;
 import host.plas.restored.data.blocks.BlockType;
-import host.plas.restored.data.blocks.ScreenBlock;
+import host.plas.restored.data.blocks.NetworkBlock;
 import host.plas.restored.data.blocks.datablock.DataBlock;
 import host.plas.restored.data.items.impl.ViewerItem;
-import host.plas.restored.data.screens.InventorySheet;
-import host.plas.restored.data.screens.ScreenInstance;
-import host.plas.restored.data.screens.ScreenManager;
 import host.plas.restored.data.screens.items.ViewerPage;
-import host.plas.restored.utils.MessageUtils;
-import io.streamlined.bukkit.commands.Sender;
 import lombok.Getter;
 import lombok.Setter;
 import mc.obliviate.inventory.Icon;
@@ -28,7 +29,7 @@ import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
 
 @Getter @Setter
-public class Viewer extends ScreenBlock {
+public class Viewer extends NetworkBlock {
     public Viewer(Network network, Location location) {
         super(BlockType.VIEWER, network, location, ViewerItem::new);
     }
@@ -72,7 +73,7 @@ public class Viewer extends ScreenBlock {
 
     @Override
     public String buildTitle(Player player, ScreenBlock block) {
-        return MessageUtils.colorize("&bNetwork Viewer");
+        return ColorUtils.colorizeHard("&bNetwork Viewer");
     }
 
     public void showPage(Player player, int pageIndex, ScreenBlock block) {
@@ -97,7 +98,7 @@ public class Viewer extends ScreenBlock {
         InventorySheet inventorySheet = buildInventorySheet(player, block);
         String title = buildTitle(player, block);
 
-        ScreenInstance screen = new ScreenInstance(player, this.getIdentifier(), title, inventorySheet, block);
+        ScreenInstance screen = new ScreenInstance(player, this.getType(), inventorySheet);
 
         screen.open();
     }
@@ -164,12 +165,14 @@ public class Viewer extends ScreenBlock {
                     }
                 }
 
-                ScreenBlock screenBlock = screen.getBlock();
+                Optional<ScreenBlock> screenBlock = screen.getScreenBlock();
+                if (screenBlock.isEmpty()) return;
+                ScreenBlock block = screenBlock.get();
 
-                if (screenBlock instanceof Viewer) {
-                    Viewer viewer = (Viewer) screenBlock;
+                if (block instanceof Viewer) {
+                    Viewer viewer = (Viewer) block;
 
-                    viewer.showPage(player, actionPage, screenBlock);
+                    viewer.showPage(player, actionPage, viewer);
                 }
             });
         });
@@ -216,12 +219,14 @@ public class Viewer extends ScreenBlock {
                     }
                 }
 
-                ScreenBlock screenBlock = screen.getBlock();
+                Optional<ScreenBlock> screenBlock = screen.getScreenBlock();
+                if (screenBlock.isEmpty()) return;
+                ScreenBlock block = screenBlock.get();
 
-                if (screenBlock instanceof Viewer) {
-                    Viewer viewer = (Viewer) screenBlock;
+                if (block instanceof Viewer) {
+                    Viewer viewer = (Viewer) block;
 
-                    viewer.showPage(player, actionPage, screenBlock);
+                    viewer.showPage(player, actionPage, viewer);
                 }
             });
         });

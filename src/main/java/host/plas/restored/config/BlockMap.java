@@ -3,7 +3,6 @@ package host.plas.restored.config;
 import host.plas.restored.Restored;
 import host.plas.restored.data.Network;
 import host.plas.restored.data.blocks.datablock.DataBlock;
-import host.plas.restored.utils.MessageUtils;
 import lombok.Getter;
 import lombok.Setter;
 import org.bukkit.block.Block;
@@ -35,15 +34,15 @@ public class BlockMap extends SimpleJsonDocument {
         reloadResource();
 
         if (! getResource().contains(getKey(block))) {
-            MessageUtils.logInfo("Block not found in resource");
+            Restored.getInstance().logInfo("Block not found in resource");
             return Optional.empty();
         }
 
-        MessageUtils.logInfo("Block found in resource");
+        Restored.getInstance().logInfo("Block found in resource");
 
         DataBlock dataBlock = new DataBlock(block);
 
-        MessageUtils.logInfo("DataBlock created");
+        Restored.getInstance().logInfo("DataBlock created");
         return Optional.of(dataBlock);
     }
 
@@ -51,20 +50,20 @@ public class BlockMap extends SimpleJsonDocument {
         reloadResource();
 
         if (! getResource().contains(getKey(block))) {
-            MessageUtils.logInfo("Block not found in resource");
+            Restored.getInstance().logInfo("Block not found in resource");
             return Optional.empty();
         }
 
-        MessageUtils.logInfo("Block found in resource");
+        Restored.getInstance().logInfo("Block found in resource");
 
         if (network == null) {
-            MessageUtils.logInfo("Network is null");
+            Restored.getInstance().logInfo("Network is null");
             return Optional.empty();
         }
 
         DataBlock dataBlock = new DataBlock(block, network);
 
-        MessageUtils.logInfo("DataBlock created");
+        Restored.getInstance().logInfo("DataBlock created");
         return Optional.of(dataBlock);
     }
 
@@ -81,13 +80,13 @@ public class BlockMap extends SimpleJsonDocument {
         Optional<DataBlock> dataBlock = getDataBlockAt(block);
 
         if (dataBlock.isEmpty()) {
-            MessageUtils.logInfo("DataBlock is empty");
+            Restored.getInstance().logInfo("DataBlock is empty");
             return Optional.empty();
         }
         DataBlock data = dataBlock.get();
 
         if (data.getNetwork().isEmpty()) {
-            MessageUtils.logInfo("Network is empty");
+            Restored.getInstance().logInfo("Network is empty");
             return Optional.empty();
         }
 

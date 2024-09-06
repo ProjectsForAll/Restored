@@ -1,6 +1,6 @@
 package host.plas.restored.events.own;
 
-import host.plas.restored.data.blocks.ScreenBlock;
+import host.plas.restored.data.blocks.NetworkBlock;
 import lombok.Getter;
 import lombok.Setter;
 import org.bukkit.Location;
@@ -10,9 +10,9 @@ import tv.quaint.events.components.BaseEvent;
 @Getter @Setter
 public class BlockOpenEvent extends BaseEvent {
     private Player player;
-    private ScreenBlock block;
+    private NetworkBlock block;
 
-    public BlockOpenEvent(Player player, ScreenBlock block) {
+    public BlockOpenEvent(Player player, NetworkBlock block) {
         super();
 
         this.player = player;

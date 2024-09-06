@@ -1,20 +1,18 @@
 package host.plas.restored.data;
 
+import host.plas.bou.commands.Sender;
+import host.plas.bou.gui.ScreenManager;
+import host.plas.bou.gui.screens.ScreenInstance;
 import host.plas.restored.Restored;
 import host.plas.restored.data.blocks.NetworkBlock;
-import host.plas.restored.data.blocks.ScreenBlock;
 import host.plas.restored.data.blocks.datablock.DataBlock;
 import host.plas.restored.data.disks.StorageDisk;
 import host.plas.restored.data.items.IPlaceable;
 import host.plas.restored.data.items.ItemManager;
 import host.plas.restored.data.items.RestoredItem;
 import host.plas.restored.data.permission.PermissionNode;
-import host.plas.restored.data.screens.ScreenInstance;
-import host.plas.restored.data.screens.ScreenManager;
 import host.plas.restored.data.screens.items.StoredItem;
 import host.plas.restored.data.storage.NetworkSerializable;
-import host.plas.restored.utils.MessageUtils;
-import io.streamlined.bukkit.commands.Sender;
 import lombok.Getter;
 import lombok.Setter;
 import org.bukkit.block.Block;
@@ -156,11 +154,14 @@ public class NetworkManager {
         }
 
         ScreenInstance screen = screenOptional.get();
-        Optional<Network> networkOptional = screen.getBlock().getNetwork();
+        Optional<Optional<Network>> networkOptional = screen.getScreenBlock().filter(NetworkBlock.class::isInstance).map(NetworkBlock.class::cast).map(NetworkBlock::getNetwork);
         if (networkOptional.isEmpty()) {
             return;
         }
-        Network network = networkOptional.get();
+        if (networkOptional.get().isEmpty()) {
+            return;
+        }
+        Network network = networkOptional.get().get();
 
         if (type == ClickType.LEFT) {
             if (cursor != null && item.isComparable(cursor)) {
@@ -265,24 +266,21 @@ public class NetworkManager {
 
         Optional<Network> optionalNetwork = getNetworkAt(block);
         if (optionalNetwork.isEmpty()) {
-            MessageUtils.logInfo("No network found at block...");
+            Restored.getInstance().logInfo("No network found at block...");
             Optional<NetworkBlock> optionalNetworkBlock = getNetworkBlockAt(block);
             if (optionalNetworkBlock.isEmpty()) {
-                MessageUtils.logInfo("No network or network block found at block...");
+                Restored.getInstance().logInfo("No network or network block found at block...");
                 return;
             }
 
             NetworkBlock networkBlock = optionalNetworkBlock.get();
 
-            if (networkBlock instanceof ScreenBlock) {
-                ScreenBlock screenBlock = (ScreenBlock) networkBlock;
-                screenBlock.onRightClick(player);
-                event.setCancelled(true);
-            }
+            networkBlock.onRightClick(player);
+            event.setCancelled(true);
 
             return;
         } else {
-            MessageUtils.logInfo("Network found at block...");
+            Restored.getInstance().logInfo("Network found at block...");
         }
 
         Network network = optionalNetwork.get();
@@ -311,7 +309,7 @@ public class NetworkManager {
     public static void onBlockPlace(BlockPlaceEvent event) {
         if (event.isCancelled()) return;
 
-        MessageUtils.logInfo("Handling block placement for " + NetworkManager.class.getSimpleName() + "...");
+        Restored.getInstance().logInfo("Handling block placement for " + NetworkManager.class.getSimpleName() + "...");
 
         Block block = event.getBlockAgainst();
         if (block == null) return;
@@ -321,7 +319,7 @@ public class NetworkManager {
 
         RestoredItem restoredItem = ItemManager.readItem(item);
         if (restoredItem == null) {
-            MessageUtils.logInfo("Item is null...");
+            Restored.getInstance().logInfo("Item is null...");
             return;
         }
 

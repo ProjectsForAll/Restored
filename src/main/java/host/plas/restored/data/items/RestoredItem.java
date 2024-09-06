@@ -1,7 +1,7 @@
 package host.plas.restored.data.items;
 
+import host.plas.bou.utils.ColorUtils;
 import host.plas.restored.Restored;
-import host.plas.restored.utils.MessageUtils;
 import lombok.Getter;
 import lombok.Setter;
 import org.bukkit.Material;
@@ -34,11 +34,11 @@ public abstract class RestoredItem {
         ItemStack item = new ItemStack(material);
         ItemMeta meta = item.getItemMeta();
         if (meta != null) {
-            meta.setDisplayName(MessageUtils.colorize(displayName));
+            meta.setDisplayName(ColorUtils.colorizeHard(displayName));
 
             List<String> lore = new ArrayList<>();
             for (String s : this.lore) {
-                lore.add(MessageUtils.colorize(s));
+                lore.add(ColorUtils.colorizeHard(s));
             }
             meta.setLore(lore);
 

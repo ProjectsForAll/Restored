@@ -1,7 +1,6 @@
 package host.plas.restored.events.own;
 
 import host.plas.restored.data.blocks.NetworkBlock;
-import host.plas.restored.data.blocks.ScreenBlock;
 import lombok.Getter;
 import lombok.Setter;
 import org.bukkit.Location;
@@ -13,7 +12,7 @@ public class BlockCloseEvent extends BaseEvent {
     private NetworkBlock block;
     private Player player;
 
-    public BlockCloseEvent(Player player, ScreenBlock block) {
+    public BlockCloseEvent(Player player, NetworkBlock block) {
         super();
 
         this.block = block;

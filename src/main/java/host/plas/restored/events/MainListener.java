@@ -1,27 +1,20 @@
 package host.plas.restored.events;
 
+import host.plas.bou.notifications.NotificationTimer;
 import host.plas.restored.Restored;
-import host.plas.restored.data.Network;
 import host.plas.restored.data.NetworkManager;
-import host.plas.restored.managers.NotificationTimer;
-import host.plas.restored.utils.MessageUtils;
 import org.bukkit.Bukkit;
-import org.bukkit.block.Block;
-import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.event.block.BlockPlaceEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
 
-import java.util.Optional;
-import java.util.concurrent.ConcurrentSkipListSet;
-
 public class MainListener implements Listener {
     public MainListener() {
         Bukkit.getPluginManager().registerEvents(this, Restored.getInstance());
 
-        MessageUtils.logInfo("Registered MainListener!");
+        Restored.getInstance().logInfo("Registered MainListener!");
     }
 
     @EventHandler

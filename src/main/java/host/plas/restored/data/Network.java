@@ -1,10 +1,12 @@
 package host.plas.restored.data;
 
+import host.plas.bou.gui.ScreenManager;
+import host.plas.bou.gui.screens.ScreenInstance;
+import host.plas.bou.gui.screens.blocks.ScreenBlock;
 import host.plas.restored.Restored;
 import host.plas.restored.data.blocks.datablock.DataBlock;
 import host.plas.restored.data.blocks.impl.Controller;
 import host.plas.restored.data.blocks.NetworkBlock;
-import host.plas.restored.data.blocks.ScreenBlock;
 import host.plas.restored.data.blocks.impl.Drive;
 import host.plas.restored.data.blocks.impl.Viewer;
 import host.plas.restored.data.disks.StorageDisk;
@@ -13,9 +15,7 @@ import host.plas.restored.data.screens.items.StoredItem;
 import host.plas.restored.data.screens.items.ViewerPage;
 import host.plas.restored.data.permission.PermissionNode;
 import host.plas.restored.data.permission.PermissionSystem;
-import host.plas.restored.data.screens.ScreenManager;
 import host.plas.restored.data.storage.NetworkSerializable;
-import host.plas.restored.utils.MessageUtils;
 import lombok.Getter;
 import lombok.Setter;
 import org.bukkit.Bukkit;
@@ -342,7 +342,7 @@ public class Network implements Identifiable {
     public void removeBlock(NetworkBlock block) {
         NetworkManager.removeNetworkedBlock(block.getBlock());
 
-        getBlocks().removeIf(b -> b.getUuid().equals(block.getUuid()));
+        getBlocks().removeIf(b -> b.getIdentifier().equals(block.getIdentifier()));
     }
 
     public Optional<NetworkBlock> getNetworkBlock(Block block) {
@@ -363,12 +363,7 @@ public class Network implements Identifiable {
         Optional<NetworkBlock> networkBlock = getNetworkBlock(block);
         if (networkBlock.isPresent()) {
             NetworkBlock b = networkBlock.get();
-            if (b instanceof ScreenBlock) {
-                ScreenBlock screenBlock = (ScreenBlock) b;
-                ScreenManager.getPlayersOf(screenBlock).forEach((p, s) -> {
-                    s.close();
-                });
-            }
+            ScreenManager.getPlayersOf(b).forEach(ScreenInstance::close);
 
             if (b.equals(getController())) {
                 event.setCancelled(true);
@@ -406,16 +401,11 @@ public class Network implements Identifiable {
         Optional<NetworkBlock> networkBlock = getNetworkBlock(block);
         if (networkBlock.isPresent()) {
             NetworkBlock b = networkBlock.get();
-            if (b instanceof ScreenBlock) {
-                ScreenBlock screenBlock = (ScreenBlock) b;
-                ScreenManager.getPlayersOf(screenBlock).forEach((p, s) -> {
-                    s.close();
-                });
+            ScreenManager.getPlayersOf(b).forEach(ScreenInstance::close);
 
-                screenBlock.onRightClick(event.getPlayer());
-            }
+            b.onRightClick(event.getPlayer());
         } else {
-            MessageUtils.logInfo("No network block found...");
+            Restored.getInstance().logInfo("No network block found...");
         }
     }
 

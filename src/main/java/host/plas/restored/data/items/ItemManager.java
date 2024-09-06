@@ -1,7 +1,7 @@
 package host.plas.restored.data.items;
 
+import host.plas.restored.Restored;
 import host.plas.restored.data.items.impl.*;
-import host.plas.restored.utils.MessageUtils;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.persistence.PersistentDataContainer;
@@ -20,7 +20,7 @@ public class ItemManager {
 
         PersistentDataContainer container = meta.getPersistentDataContainer();
         if (! container.has(RestoredItem.getTypeKey())) {
-            MessageUtils.logInfo("Item has no type key...");
+            Restored.getInstance().logInfo("Item has no type key...");
             return null;
         }
 
@@ -30,14 +30,14 @@ public class ItemManager {
     public static ItemType getTypeFrom(ItemStack stack) {
         String type = deserializeType(stack);
         if (type == null) {
-            MessageUtils.logInfo("Item has no type key...");
+            Restored.getInstance().logInfo("Item has no type key...");
             return ItemType.NONE;
         }
 
         try {
             return ItemType.valueOf(type);
         } catch (Exception e) {
-            MessageUtils.logWarning("Error while deserializing item type: " + type, e);
+            Restored.getInstance().logWarning("Error while deserializing item type: " + type, e);
 
             return ItemType.NONE;
         }
@@ -57,7 +57,7 @@ public class ItemManager {
             case FOUR_K_DISK:
                 return new FourKDiskItem();
             default:
-                MessageUtils.logInfo("Item has no type key...");
+                Restored.getInstance().logInfo("Item has no type key...");
                 return null;
         }
     }

@@ -1,7 +1,8 @@
 package host.plas.restored.data.screens.items;
 
+import host.plas.bou.gui.items.ItemData;
+import host.plas.bou.utils.ColorUtils;
 import host.plas.restored.data.NetworkManager;
-import host.plas.restored.utils.MessageUtils;
 import lombok.Getter;
 import lombok.Setter;
 import mc.obliviate.inventory.Icon;
@@ -33,6 +34,12 @@ public class StoredItem implements Identifiable {
         this.identifier = identifier;
         this.amount = amount;
         this.item = flattenStack(item);
+    }
+
+    public StoredItem(ItemData data) {
+        this.identifier = data.getIdentifier();
+        this.amount = data.getAmount();
+        this.item = data.getStack();
     }
 
     public static ItemStack flattenStack(ItemStack stack) {
@@ -85,9 +92,9 @@ public class StoredItem implements Identifiable {
 
         lore.add("");
 
-        lore.add(MessageUtils.colorize("&d&m     &r Item Info &d&m     &r"));
-        lore.add(MessageUtils.colorize("&7Amount: &f" + amount.toString()));
-        lore.add(MessageUtils.colorize("&7UUID: &f" + getUuid()));
+        lore.add(ColorUtils.colorizeHard("&d&m     &r Item Info &d&m     &r"));
+        lore.add(ColorUtils.colorizeHard("&7Amount: &f" + amount.toString()));
+        lore.add(ColorUtils.colorizeHard("&7UUID: &f" + getUuid()));
 
         return lore;
     }

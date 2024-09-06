@@ -9,7 +9,6 @@ import host.plas.restored.data.blocks.NetworkBlock;
 import host.plas.restored.data.blocks.impl.Controller;
 import host.plas.restored.data.blocks.impl.Drive;
 import host.plas.restored.data.blocks.impl.Viewer;
-import host.plas.restored.utils.MessageUtils;
 import lombok.Getter;
 import lombok.NonNull;
 import lombok.Setter;
@@ -88,20 +87,20 @@ public class DataBlock implements Identifiable {
     }
 
     public void load() {
-        MessageUtils.logInfo("Loading data block...");
+        Restored.getInstance().logInfo("Loading data block...");
 
         FlatFileSection section = getSection();
 
         Map<String, Object> map = section.getMapParameterized("");
         data.putAll(map);
 
-        MessageUtils.logInfo("Data block data loaded");
+        Restored.getInstance().logInfo("Data block data loaded");
     }
 
     public void readNetwork() {
         String networkIdentifier = getString("network");
         if (networkIdentifier != null) {
-            MessageUtils.logInfo("Network identifier found");
+            Restored.getInstance().logInfo("Network identifier found");
             network = NetworkManager.getOrGetNetwork(networkIdentifier);
         } else {
             network = Optional.empty();
@@ -109,7 +108,7 @@ public class DataBlock implements Identifiable {
     }
 
     public void readMap() {
-        MessageUtils.logInfo("Reading data block map...");
+        Restored.getInstance().logInfo("Reading data block map...");
 
         if (this.network.isEmpty()) {
             readNetwork();
@@ -120,7 +119,7 @@ public class DataBlock implements Identifiable {
             type = BlockType.valueOf(typeString);
         }
 
-        MessageUtils.logInfo("Data block map read");
+        Restored.getInstance().logInfo("Data block map read");
     }
 
     public void writeMap() {

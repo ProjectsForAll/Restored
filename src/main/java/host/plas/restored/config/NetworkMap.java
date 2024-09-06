@@ -2,14 +2,12 @@ package host.plas.restored.config;
 
 import host.plas.restored.Restored;
 import host.plas.restored.data.Network;
-import host.plas.restored.data.blocks.datablock.DataBlock;
 import lombok.Getter;
 import lombok.Setter;
 import org.bukkit.block.Block;
 import tv.quaint.storage.documents.SimpleJsonDocument;
 
 import java.util.ArrayList;
-import java.util.Optional;
 import java.util.concurrent.ConcurrentSkipListSet;
 
 @Getter @Setter

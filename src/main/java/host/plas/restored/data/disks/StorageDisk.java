@@ -1,9 +1,9 @@
 package host.plas.restored.data.disks;
 
+import host.plas.bou.utils.ColorUtils;
 import host.plas.restored.Restored;
 import host.plas.restored.data.screens.items.StoredItem;
 import host.plas.restored.data.storage.DiskSerializable;
-import host.plas.restored.utils.MessageUtils;
 import lombok.Getter;
 import lombok.Setter;
 import org.bukkit.Material;
@@ -156,7 +156,7 @@ public class StorageDisk implements Identifiable {
 
         ItemMeta meta = stack.getItemMeta();
         if (meta != null) {
-            meta.setDisplayName(MessageUtils.colorize("&cStorage Disk"));
+            meta.setDisplayName(ColorUtils.colorizeHard("&cStorage Disk"));
             meta.setLore(getLore());
 
             PersistentDataContainer container = meta.getPersistentDataContainer();
@@ -175,13 +175,13 @@ public class StorageDisk implements Identifiable {
     public List<String> getLore() {
         List<String> lore = new ArrayList<>();
 
-        lore.add(MessageUtils.colorize("&eCapacity&7: &a" + getCapacity()));
-        lore.add(MessageUtils.colorize("&eCurrently Held&7: &a" + getTotalQuantity()));
-        lore.add(MessageUtils.colorize("&eSpace Left&7: &a" + getRemainingCapacity()));
+        lore.add(ColorUtils.colorizeHard("&eCapacity&7: &a" + getCapacity()));
+        lore.add(ColorUtils.colorizeHard("&eCurrently Held&7: &a" + getTotalQuantity()));
+        lore.add(ColorUtils.colorizeHard("&eSpace Left&7: &a" + getRemainingCapacity()));
 
-        lore.add(MessageUtils.colorize("&r"));
+        lore.add(ColorUtils.colorizeHard("&r"));
 
-        lore.add(MessageUtils.colorize("&eDisk ID&7: &c" + getUuid()));
+        lore.add(ColorUtils.colorizeHard("&eDisk ID&7: &c" + getUuid()));
 
         return lore;
     }

@@ -1,16 +1,17 @@
 package host.plas.restored.data.blocks.impl;
 
+import host.plas.bou.gui.InventorySheet;
+import host.plas.bou.gui.screens.blocks.ScreenBlock;
+import host.plas.bou.gui.slots.Slot;
+import host.plas.bou.utils.ColorUtils;
 import host.plas.restored.data.Network;
 import host.plas.restored.data.blocks.BlockType;
-import host.plas.restored.data.blocks.ScreenBlock;
+import host.plas.restored.data.blocks.NetworkBlock;
 import host.plas.restored.data.blocks.datablock.DataBlock;
 import host.plas.restored.data.disks.StorageDisk;
 import host.plas.restored.data.disks.impl.FourKDisk;
 import host.plas.restored.data.items.impl.DriveItem;
 import host.plas.restored.data.items.impl.FourKDiskItem;
-import host.plas.restored.data.screens.InventorySheet;
-import host.plas.restored.data.screens.Slot;
-import host.plas.restored.utils.MessageUtils;
 import lombok.Getter;
 import lombok.Setter;
 import mc.obliviate.inventory.Icon;
@@ -26,7 +27,7 @@ import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.concurrent.atomic.AtomicReference;
 
 @Getter @Setter
-public class Drive extends ScreenBlock {
+public class Drive extends NetworkBlock {
     private ConcurrentSkipListMap<Integer, StorageDisk> disks; // Set of disks in the drive
 
     public Drive(Network network, Location location) {
@@ -155,6 +156,6 @@ public class Drive extends ScreenBlock {
 
     @Override
     public String buildTitle(Player player, ScreenBlock block) {
-        return MessageUtils.colorize("&cDrive");
+        return ColorUtils.colorizeHard("&cDrive");
     }
 }

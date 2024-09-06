@@ -1,5 +1,6 @@
 package host.plas.restored.data.blocks;
 
+import host.plas.bou.gui.GuiType;
 import host.plas.restored.data.Network;
 import host.plas.restored.data.blocks.impl.Controller;
 import host.plas.restored.data.blocks.impl.Drive;
@@ -8,20 +9,24 @@ import lombok.Getter;
 import org.bukkit.Location;
 
 @Getter
-public enum BlockType {
-    CONTROLLER(9),
-    DRIVE(9),
-    VIEWER(54),
+public enum BlockType implements GuiType {
+    CONTROLLER(9, "Controller"),
+    DRIVE(9, "Drive"),
+    VIEWER(54, "Viewer"),
+
+    NONE,
     ;
 
-    private int slots;
+    private final int slots;
+    private final String title;
 
-    BlockType(int slots) {
+    BlockType(int slots, String title) {
         this.slots = slots;
+        this.title = title;
     }
 
     BlockType() {
-        this(-1);
+        this(-1, null);
     }
 
     public static NetworkBlock getBlock(BlockType type, Network network, Location location) {

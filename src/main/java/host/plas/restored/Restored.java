@@ -1,5 +1,6 @@
 package host.plas.restored;
 
+import host.plas.bou.BetterPlugin;
 import host.plas.restored.commands.GetItemCMD;
 import host.plas.restored.commands.NetworkPermissionsCMD;
 import host.plas.restored.config.BlockMap;
@@ -8,7 +9,6 @@ import host.plas.restored.config.NetworkMap;
 import host.plas.restored.data.Network;
 import host.plas.restored.data.NetworkManager;
 import host.plas.restored.events.MainListener;
-import io.streamlined.bukkit.PluginBase;
 import lombok.Getter;
 import lombok.Setter;
 import mc.obliviate.inventory.InventoryAPI;
@@ -17,7 +17,7 @@ import org.bukkit.entity.Player;
 import java.util.concurrent.ConcurrentSkipListMap;
 
 @Getter @Setter
-public final class Restored extends PluginBase {
+public final class Restored extends BetterPlugin {
     @Getter @Setter
     private static Restored instance;
     @Getter @Setter

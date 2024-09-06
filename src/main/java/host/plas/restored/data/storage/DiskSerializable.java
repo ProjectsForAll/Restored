@@ -1,8 +1,8 @@
 package host.plas.restored.data.storage;
 
+import host.plas.bou.gui.items.ItemData;
 import host.plas.restored.Restored;
 import host.plas.restored.data.disks.StorageDisk;
-import host.plas.restored.data.screens.items.ItemData;
 import host.plas.restored.data.screens.items.StoredItem;
 import lombok.Getter;
 import lombok.Setter;
@@ -82,7 +82,8 @@ public class DiskSerializable extends SimpleJsonDocument {
 
                 ItemData data = new ItemData(identifier, amount, stringData);
 
-                items.add(data.toStoredItem());
+                StoredItem item = new StoredItem(data);
+                items.add(item);
             }
         });
 

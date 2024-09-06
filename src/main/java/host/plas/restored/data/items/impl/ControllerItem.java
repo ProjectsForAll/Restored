@@ -1,22 +1,18 @@
 package host.plas.restored.data.items.impl;
 
+import host.plas.bou.commands.Sender;
 import host.plas.restored.Restored;
 import host.plas.restored.data.Network;
 import host.plas.restored.data.NetworkManager;
 import host.plas.restored.data.items.IPlaceable;
 import host.plas.restored.data.items.ItemType;
 import host.plas.restored.data.items.RestoredItem;
-import host.plas.restored.data.permission.PermissionNode;
-import host.plas.restored.utils.MessageUtils;
-import io.streamlined.bukkit.commands.Sender;
 import lombok.Getter;
 import lombok.Setter;
 import org.bukkit.Material;
 import org.bukkit.block.Block;
 import org.bukkit.entity.Player;
 import org.bukkit.event.block.BlockPlaceEvent;
-
-import java.math.BigInteger;
 
 @Getter @Setter
 public class ControllerItem extends RestoredItem implements IPlaceable {
@@ -43,16 +39,16 @@ public class ControllerItem extends RestoredItem implements IPlaceable {
 
         Block placedBlock = event.getBlockPlaced();
 
-        MessageUtils.logInfo("Handling block placement for " + getClass().getSimpleName() + "...");
+        Restored.getInstance().logInfo("Handling block placement for " + getClass().getSimpleName() + "...");
 
         NetworkManager.getAdjacentNetwork(placedBlock).ifPresentOrElse(network -> {
-            MessageUtils.logInfo("Found network for block placement for " + getClass().getSimpleName() + "...");
+            Restored.getInstance().logInfo("Found network for block placement for " + getClass().getSimpleName() + "...");
 
             event.setCancelled(true);
             Sender sender = new Sender(player);
             sender.sendMessage("&cYou cannot place a controller block near an existing network!");
         }, () -> {
-            MessageUtils.logInfo("No network found for block placement for " + getClass().getSimpleName() + "...");
+            Restored.getInstance().logInfo("No network found for block placement for " + getClass().getSimpleName() + "...");
 
             onNoNetworkPlace(placedBlock, player);
 

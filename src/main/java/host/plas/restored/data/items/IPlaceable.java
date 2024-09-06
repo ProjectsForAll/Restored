@@ -1,10 +1,10 @@
 package host.plas.restored.data.items;
 
+import host.plas.bou.commands.Sender;
+import host.plas.restored.Restored;
 import host.plas.restored.data.Network;
 import host.plas.restored.data.NetworkManager;
 import host.plas.restored.data.permission.PermissionNode;
-import host.plas.restored.utils.MessageUtils;
-import io.streamlined.bukkit.commands.Sender;
 import org.bukkit.block.Block;
 import org.bukkit.entity.Player;
 import org.bukkit.event.block.BlockPlaceEvent;
@@ -19,10 +19,10 @@ public interface IPlaceable {
 
         Block placedBlock = event.getBlockPlaced();
 
-        MessageUtils.logInfo("Handling block placement for " + getClass().getSimpleName() + "...");
+        Restored.getInstance().logInfo("Handling block placement for " + getClass().getSimpleName() + "...");
 
         NetworkManager.getAdjacentNetwork(placedBlock).ifPresentOrElse(network -> {
-            MessageUtils.logInfo("Found network for block placement for " + getClass().getSimpleName() + "...");
+            Restored.getInstance().logInfo("Found network for block placement for " + getClass().getSimpleName() + "...");
 
             if (! network.hasPermission(player, PermissionNode.NETWORK_PLACE)) {
                 Sender sender = new Sender(player);
@@ -36,7 +36,7 @@ public interface IPlaceable {
 
 //            event.setCancelled(true);
         }, () -> {
-            MessageUtils.logInfo("No network found for block placement for " + getClass().getSimpleName() + "...");
+            Restored.getInstance().logInfo("No network found for block placement for " + getClass().getSimpleName() + "...");
 
             onNoNetworkPlace(placedBlock, player);
 
