@@ -5,6 +5,7 @@ import host.plas.bou.gui.ScreenManager;
 import host.plas.bou.gui.screens.ScreenInstance;
 import host.plas.restored.Restored;
 import host.plas.restored.data.blocks.NetworkBlock;
+import host.plas.restored.data.blocks.NetworkMap;
 import host.plas.restored.data.blocks.datablock.DataBlock;
 import host.plas.restored.data.disks.StorageDisk;
 import host.plas.restored.data.items.IPlaceable;
@@ -32,6 +33,7 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentSkipListSet;
+import java.util.stream.Collectors;
 
 public class NetworkManager {
     @Getter @Setter
@@ -81,6 +83,8 @@ public class NetworkManager {
 
     public static void removeNetwork(Network network) {
         networks.removeIf(n -> n.getUuid().equals(network.getUuid()));
+
+        NetworkMap.delete(network.getIdentifier());
     }
 
     public static Optional<Network> getOrGetNetwork(String identifier) {
@@ -356,7 +360,7 @@ public class NetworkManager {
     }
 
     public static ConcurrentSkipListSet<String> getOwnedNetworkUuids(Player player) {
-        return Restored.getNetworkMap().getNetworksForPlayer(player.getUniqueId().toString());
+        return Restored.getNetworkMapConfig().getOwnedNetworks(player.getUniqueId().toString());
     }
 
     public static ConcurrentSkipListSet<Network> getOwnedNetworks(Player player) {
@@ -371,7 +375,7 @@ public class NetworkManager {
     }
 
     public static ConcurrentSkipListSet<String> getAllNetworkUuids() {
-        return Restored.getNetworkMap().getNetworks();
+        return Restored.getNetworkMapConfig().getNetworkIdentifiers();
     }
 
     public static CompletableFuture<ConcurrentSkipListSet<Network>> getAllNetworks() {

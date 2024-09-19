@@ -114,4 +114,8 @@ public abstract class NetworkBlock extends ScreenBlock implements IDatalizable {
     public Block getBlock() {
         return location.getBlock();
     }
+
+    public BlockLocation getBlockLocation() {
+        return BlockLocation.of(getLocation());
+    }
 }

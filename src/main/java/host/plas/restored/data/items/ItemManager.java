@@ -2,6 +2,8 @@ package host.plas.restored.data.items;
 
 import host.plas.restored.Restored;
 import host.plas.restored.data.items.impl.*;
+import lombok.Getter;
+import lombok.Setter;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.persistence.PersistentDataContainer;
@@ -11,6 +13,7 @@ import java.math.BigInteger;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 public class ItemManager {
@@ -53,7 +56,7 @@ public class ItemManager {
             case VIEWER:
                 return new ViewerItem();
             case GENERIC_DISK:
-                return new GenericDiskItem(readCapacity(stack));
+                return new GenericDiskItem(ItemType.GENERIC_DISK, readCapacity(stack));
             case FOUR_K_DISK:
                 return new FourKDiskItem();
             default:
@@ -85,10 +88,10 @@ public class ItemManager {
                     return Optional.of(new ViewerItem());
                 case GENERIC_DISK:
                     if (args.length == 1) {
-                        return Optional.of(new GenericDiskItem(new BigInteger(args[0])));
+                        return Optional.of(new GenericDiskItem(ItemType.GENERIC_DISK, new BigInteger(args[0])));
                     }
 
-                    return Optional.of(new GenericDiskItem(new BigInteger("1000")));
+                    return Optional.of(new GenericDiskItem(ItemType.GENERIC_DISK, new BigInteger("1000")));
                 case FOUR_K_DISK:
                     return Optional.of(new FourKDiskItem());
                 default:
@@ -101,5 +104,33 @@ public class ItemManager {
 
     public static Collection<String> getRegisteredItems() {
         return Arrays.stream(ItemType.values()).map(Enum::name).collect(Collectors.toList());
+    }
+
+    @Getter @Setter
+    private static ConcurrentHashMap<Class<?>, RestoredItem> itemStore = new ConcurrentHashMap<>();
+
+    public static <C extends RestoredItem> void registerItem(C item) {
+        itemStore.put(item.getClass(), item);
+    }
+
+    public static <C extends RestoredItem> Optional<C> getDefaultItem(Class<C> clazz) {
+        return Optional.ofNullable((C) itemStore.get(clazz));
+    }
+
+    public static void init() {
+        Arrays.stream(ItemType.values()).forEach(type -> {
+            RestoredItem item = getItem(type.name(), "1000").orElse(null);
+            if (item != null) {
+                registerItem(item);
+            }
+        });
+    }
+
+    public static boolean isDiskItem(ItemType type) {
+        return type == ItemType.GENERIC_DISK || type == ItemType.FOUR_K_DISK;
+    }
+
+    public static boolean isDiskItem(ItemStack stack) {
+        return isDiskItem(getTypeFrom(stack));
     }
 }

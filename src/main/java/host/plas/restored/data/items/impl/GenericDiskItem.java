@@ -18,8 +18,8 @@ import java.math.BigInteger;
 public class GenericDiskItem extends RestoredItem {
     private BigInteger size;
 
-    public GenericDiskItem(BigInteger size) {
-        super(ItemType.GENERIC_DISK,
+    public GenericDiskItem(ItemType type, BigInteger size) {
+        super(type,
                 Material.PAPER,
                 getSizedName(size),
                 "&7Size&8: &a" + size + " &7Item Disk"

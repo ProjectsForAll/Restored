@@ -4,6 +4,8 @@ import host.plas.bou.gui.ScreenManager;
 import host.plas.bou.gui.screens.ScreenInstance;
 import host.plas.bou.gui.screens.blocks.ScreenBlock;
 import host.plas.restored.Restored;
+import host.plas.restored.data.blocks.NetworkMap;
+import host.plas.restored.data.blocks.SingleNetworkMap;
 import host.plas.restored.data.blocks.datablock.DataBlock;
 import host.plas.restored.data.blocks.impl.Controller;
 import host.plas.restored.data.blocks.NetworkBlock;
@@ -15,7 +17,6 @@ import host.plas.restored.data.screens.items.StoredItem;
 import host.plas.restored.data.screens.items.ViewerPage;
 import host.plas.restored.data.permission.PermissionNode;
 import host.plas.restored.data.permission.PermissionSystem;
-import host.plas.restored.data.storage.NetworkSerializable;
 import lombok.Getter;
 import lombok.Setter;
 import org.bukkit.Bukkit;
@@ -41,8 +42,6 @@ public class Network implements Identifiable {
     private String ownerUuid; // Owner of the network
     private Controller controller; // Location of the start of the network
 
-    private NetworkSerializable storage;
-
     private PermissionSystem permissionSystem;
 
     private ConcurrentSkipListSet<NetworkBlock> cachedBlocks;
@@ -59,8 +58,9 @@ public class Network implements Identifiable {
 
     public Network(String identifier) {
         this.identifier = identifier;
-        this.storage = new NetworkSerializable(this);
         this.permissionSystem = new PermissionSystem(this);
+
+        onMapLoad();
 
         onLoad();
     }
@@ -72,8 +72,6 @@ public class Network implements Identifiable {
         this.controller = new Controller(this, controller.getLocation());
         getController().saveDataBlock();
 
-        getStorage().saveController();
-
         getBlocks().forEach(NetworkBlock::saveDataBlock);
 
         onSave();
@@ -84,20 +82,32 @@ public class Network implements Identifiable {
         this(UUID.randomUUID().toString(), controller, owner);
     }
 
-    public void onLoad() {
-        getStorage().onLoad();
+    public void onMapLoad() {
+        NetworkMap.addNetwork(this);
+    }
 
+    public void onLoad() {
         if (getController() != null) {
             getBlocks().forEach(block -> block.loadDataBlock(this));
         }
     }
 
     public void onSave() {
-        Restored.getNetworkMap().saveNetwork(this);
-
-        getStorage().onSave();
+        NetworkMap.save(identifier);
 
         saveAllBlocks();
+    }
+
+    public SingleNetworkMap getMap() {
+        AtomicReference<SingleNetworkMap> map = new AtomicReference<>(null);
+        NetworkMap.getNetworkMap(identifier).ifPresent(map::set);
+        if (map.get() == null) {
+            NetworkMap.addNetwork(this);
+
+            NetworkMap.getNetworkMap(identifier).ifPresent(map::set);
+        }
+
+        return map.get();
     }
 
     public ConcurrentSkipListSet<StorageDisk> getDisks() {
@@ -153,11 +163,12 @@ public class Network implements Identifiable {
     public List<ViewerPage> getContentPages() {
         List<ViewerPage> pages = new ArrayList<>();
 
-        int index = 0;
+        int index = 1; // Start at 1 because the first page is 1.
         int itemIndex = 0;
         int itemsLeft = getContents().size();
 
-        while (itemsLeft > 0) {
+        // Include 0 itemsLeft so that the a page will be created if there are no items.
+        while (itemsLeft >= 0) {
             int itemsOnPage = Math.min(itemsLeft, 45);
 
             List<StoredItem> pageContents = new ArrayList<>();
@@ -319,6 +330,15 @@ public class Network implements Identifiable {
     public void iterateConnected(BlockFace[] faces, Block iteratingBlock, ConcurrentSkipListSet<NetworkBlock> connectedBlocks) {
         for (BlockFace face : faces) {
             Block relative = iteratingBlock.getRelative(face);
+
+            AtomicBoolean isAlreadyConnected = new AtomicBoolean(false);
+            connectedBlocks.forEach(b -> {
+                if (b.getBlock().equals(relative)) {
+                    isAlreadyConnected.set(true);
+                }
+            });
+            if (isAlreadyConnected.get()) continue;
+
             Optional<DataBlock> dataBlock = NetworkManager.getDataBlockAt(relative, this);
             if (dataBlock.isPresent()) {
                 DataBlock b = dataBlock.get();
@@ -327,10 +347,8 @@ public class Network implements Identifiable {
                 if (blockOptional.isEmpty()) continue;
                 NetworkBlock block = blockOptional.get();
 
-                if (! connectedBlocks.contains(block)) {
-                    connectedBlocks.add(block);
-                    iterateConnected(faces, relative, connectedBlocks);
-                }
+                connectedBlocks.add(block);
+                iterateConnected(faces, relative, connectedBlocks);
             }
         }
     }
@@ -382,17 +400,14 @@ public class Network implements Identifiable {
 
     public void delete() {
         getBlocks().forEach(block -> {
-            if (block instanceof Controller) return;
-
             block.setNetwork(Optional.empty());
             block.getDataBlock().setNetwork(Optional.empty());
             block.saveDataBlock();
 
             getBlocks().remove(block);
         });
-        getStorage().delete();
 
-        NetworkManager.removeNetwork(this);
+        NetworkManager.removeNetwork(this); // Also removes the network from the network map.
     }
 
     public void onBlockClick(PlayerInteractEvent event) {

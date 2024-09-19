@@ -1,6 +1,5 @@
 package host.plas.restored.events;
 
-import host.plas.bou.notifications.NotificationTimer;
 import host.plas.restored.Restored;
 import host.plas.restored.data.NetworkManager;
 import org.bukkit.Bukkit;
@@ -24,11 +23,7 @@ public class MainListener implements Listener {
 
     @EventHandler
     public void onBlockClick(PlayerInteractEvent event) {
-        if (! NotificationTimer.hasNotification("click", event.getPlayer())) {
-            NetworkManager.onBlockClick(event);
-
-            NotificationTimer.addNotification("click", event.getPlayer());
-        }
+        NetworkManager.onBlockClick(event);
     }
 
     @EventHandler

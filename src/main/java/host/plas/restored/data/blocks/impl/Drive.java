@@ -10,6 +10,9 @@ import host.plas.restored.data.blocks.NetworkBlock;
 import host.plas.restored.data.blocks.datablock.DataBlock;
 import host.plas.restored.data.disks.StorageDisk;
 import host.plas.restored.data.disks.impl.FourKDisk;
+import host.plas.restored.data.items.ItemManager;
+import host.plas.restored.data.items.ItemType;
+import host.plas.restored.data.items.RestoredItem;
 import host.plas.restored.data.items.impl.DriveItem;
 import host.plas.restored.data.items.impl.FourKDiskItem;
 import lombok.Getter;
@@ -48,7 +51,7 @@ public class Drive extends NetworkBlock {
 
         FlatFileSection section = getDataBlock().getSection();
 
-        section.singleLayerKeySet("disks.").forEach(s -> {
+        section.singleLayerKeySet("disks").forEach(s -> {
             int index = Integer.parseInt(s);
             String identifier = section.getString("disks." + s);
 
@@ -104,8 +107,7 @@ public class Drive extends NetworkBlock {
     }
 
     public boolean isCompatibleDisk(ItemStack stack) {
-        FourKDiskItem disk = new FourKDiskItem();
-        return disk.isSimilar(stack);
+        return ItemManager.isDiskItem(stack);
     }
 
     public void addDisk(ItemStack stack, int index) {

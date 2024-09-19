@@ -47,7 +47,7 @@ public abstract class RestoredItem {
 
         item = applyEdits(item);
 
-        stampItem(item);
+        stampItem(type, item);
 
         return item;
     }
@@ -64,7 +64,7 @@ public abstract class RestoredItem {
         return getItemStamp(item).equals(type.name());
     }
 
-    public String getItemStamp(ItemStack item) {
+    public static String getItemStamp(ItemStack item) {
         ItemMeta meta = item.getItemMeta();
         if (meta != null) {
             PersistentDataContainer container = meta.getPersistentDataContainer();
@@ -76,7 +76,7 @@ public abstract class RestoredItem {
         return null;
     }
 
-    public void stampItem(ItemStack item) {
+    public static void stampItem(ItemType type, ItemStack item) {
         ItemMeta meta = item.getItemMeta();
         if (meta != null) {
             PersistentDataContainer container = meta.getPersistentDataContainer();

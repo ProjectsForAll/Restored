@@ -5,13 +5,13 @@ import host.plas.restored.commands.GetItemCMD;
 import host.plas.restored.commands.NetworkPermissionsCMD;
 import host.plas.restored.config.BlockMap;
 import host.plas.restored.config.MainConfig;
-import host.plas.restored.config.NetworkMap;
+import host.plas.restored.config.NetworkMapConfig;
 import host.plas.restored.data.Network;
 import host.plas.restored.data.NetworkManager;
 import host.plas.restored.events.MainListener;
+import host.plas.restored.timers.NetworkSaveTimer;
 import lombok.Getter;
 import lombok.Setter;
-import mc.obliviate.inventory.InventoryAPI;
 import org.bukkit.entity.Player;
 
 import java.util.concurrent.ConcurrentSkipListMap;
@@ -27,12 +27,15 @@ public final class Restored extends BetterPlugin {
     @Getter @Setter
     private static MainListener mainListener;
     @Getter @Setter
-    private static NetworkMap networkMap;
+    private static NetworkMapConfig networkMapConfig;
 
     @Getter @Setter
     private static GetItemCMD getItemCMD;
     @Getter @Setter
     private static NetworkPermissionsCMD networkPermissionsCMD;
+
+    @Getter @Setter
+    private static NetworkSaveTimer networkSaveTimer;
 
     public Restored() {
         super();
@@ -45,14 +48,14 @@ public final class Restored extends BetterPlugin {
 
         setMainConfig(new MainConfig());
         setBlockMap(new BlockMap());
-        setNetworkMap(new NetworkMap());
+        setNetworkMapConfig(new NetworkMapConfig());
 
         setMainListener(new MainListener());
 
         setGetItemCMD(new GetItemCMD());
         setNetworkPermissionsCMD(new NetworkPermissionsCMD());
 
-        new InventoryAPI(this).init();
+        setNetworkSaveTimer(new NetworkSaveTimer());
     }
 
     @Override
