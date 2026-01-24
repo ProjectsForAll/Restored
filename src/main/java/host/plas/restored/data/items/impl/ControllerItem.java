@@ -4,6 +4,7 @@ import host.plas.bou.commands.Sender;
 import host.plas.restored.Restored;
 import host.plas.restored.data.Network;
 import host.plas.restored.data.NetworkManager;
+import host.plas.restored.data.blocks.NetworkMap;
 import host.plas.restored.data.items.IPlaceable;
 import host.plas.restored.data.items.ItemType;
 import host.plas.restored.data.items.RestoredItem;
@@ -67,7 +68,7 @@ public class ControllerItem extends RestoredItem implements IPlaceable {
 
     @Override
     public void onNoNetworkPlace(Block atBlock, Player placedBy) {
-        Network network = new Network(atBlock, placedBy);
+        Network network = NetworkMap.createNetwork(atBlock, placedBy);
 
         network.onSave();
 

@@ -6,14 +6,15 @@ import host.plas.bou.gui.screens.ScreenInstance;
 import host.plas.restored.Restored;
 import host.plas.restored.data.blocks.NetworkBlock;
 import host.plas.restored.data.blocks.NetworkMap;
+import host.plas.restored.data.blocks.SingleNetworkMap;
 import host.plas.restored.data.blocks.datablock.DataBlock;
+import host.plas.restored.data.blocks.impl.Drive;
 import host.plas.restored.data.disks.StorageDisk;
 import host.plas.restored.data.items.IPlaceable;
 import host.plas.restored.data.items.ItemManager;
 import host.plas.restored.data.items.RestoredItem;
 import host.plas.restored.data.permission.PermissionNode;
 import host.plas.restored.data.screens.items.StoredItem;
-import host.plas.restored.data.storage.NetworkSerializable;
 import lombok.Getter;
 import lombok.Setter;
 import org.bukkit.block.Block;
@@ -27,13 +28,11 @@ import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.inventory.ItemStack;
 
-import java.io.File;
 import java.math.BigInteger;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentSkipListSet;
-import java.util.stream.Collectors;
 
 public class NetworkManager {
     @Getter @Setter
@@ -47,41 +46,11 @@ public class NetworkManager {
         return networks.stream().filter(n -> n.getUuid().equals(uuid)).findFirst();
     }
 
-    public static boolean hasNetworkFile(String identifier) {
-        return getNetworkFileNamesTrimmed().contains(identifier);
-    }
-
-    public static ConcurrentSkipListSet<String> getNetworkFileName() {
-        ConcurrentSkipListSet<String> networkFileNames = new ConcurrentSkipListSet<>();
-
-        File[] files = NetworkSerializable.getNetworkStorage().listFiles();
-        if (files == null) return networkFileNames;
-
-        for (File file : files) {
-            if (file.getName().endsWith(".json")) {
-                networkFileNames.add(file.getName());
-            }
-        }
-
-        return networkFileNames;
-    }
-
-    public static ConcurrentSkipListSet<String> getNetworkFileNamesTrimmed() {
-        ConcurrentSkipListSet<String> networkFileNames = getNetworkFileName();
-        ConcurrentSkipListSet<String> networkFileNamesTrimmed = new ConcurrentSkipListSet<>();
-
-        for (String name : networkFileNames) {
-            networkFileNamesTrimmed.add(name.substring(0, name.length() - ".json".length()));
-        }
-
-        return networkFileNamesTrimmed;
-    }
-
-    public static void addNetwork(Network network) {
+    public static void loadNetwork(Network network) {
         networks.add(network);
     }
 
-    public static void removeNetwork(Network network) {
+    public static void unloadNetwork(Network network) {
         networks.removeIf(n -> n.getUuid().equals(network.getUuid()));
 
         NetworkMap.delete(network.getIdentifier());
@@ -91,10 +60,13 @@ public class NetworkManager {
         Optional<Network> network = getNetwork(identifier);
         if (network.isPresent()) return network;
 
-        if (! hasNetworkFile(identifier)) return Optional.empty();
+        Optional<SingleNetworkMap> optional = NetworkMap.getNetworkMap(identifier);
+        if (optional.isEmpty()) return Optional.empty();
+        SingleNetworkMap map = optional.get();
 
-        Network newNetwork = new Network(identifier);
-        addNetwork(newNetwork);
+        Network newNetwork = new Network(map.getIdentifier(), map.getOwnerUUID());
+        map.getControllerImpl(Optional.of(newNetwork)).ifPresent(newNetwork::setController);
+        loadNetwork(newNetwork);
 
         return Optional.of(newNetwork);
     }
@@ -122,14 +94,14 @@ public class NetworkManager {
         disks.removeIf(d -> d.getUuid().equals(disk.getUuid()));
     }
 
-    public static StorageDisk getOrGetDisk(String identifier) {
+    public static StorageDisk getOrGetDisk(Drive drive, String identifier) {
         Optional<StorageDisk> disk = getDisk(identifier);
 
-        return disk.orElseGet(() -> new StorageDisk(identifier));
+        return disk.orElseGet(() -> new StorageDisk(drive, identifier));
     }
 
-    public static StorageDisk getOrGetDisk(UUID uuid) {
-        return getOrGetDisk(uuid.toString());
+    public static StorageDisk getOrGetDisk(Drive drive, UUID uuid) {
+        return getOrGetDisk(drive, uuid.toString());
     }
 
     public static void saveAll() {
@@ -241,8 +213,6 @@ public class NetworkManager {
         Player player = event.getPlayer();
         Block block = event.getBlock();
 
-        removeDataBlockAt(block);
-
         Optional<Network> optionalNetwork = NetworkManager.getNetworkAt(block);
         if (optionalNetwork.isEmpty()) return;
 
@@ -256,6 +226,8 @@ public class NetworkManager {
         }
 
         network.onBlockBreak(event);
+
+        removeDataBlockAt(block);
     }
 
     public static void onBlockClick(PlayerInteractEvent event) {
@@ -321,11 +293,12 @@ public class NetworkManager {
         ItemStack item = event.getItemInHand();
         if (item == null) return;
 
-        RestoredItem restoredItem = ItemManager.readItem(item);
-        if (restoredItem == null) {
+        Optional<RestoredItem> optional = ItemManager.readItem(item);
+        if (optional.isEmpty()) {
             Restored.getInstance().logInfo("Item is null...");
             return;
         }
+        RestoredItem restoredItem = optional.get();
 
         if (restoredItem instanceof IPlaceable) {
             IPlaceable placeable = (IPlaceable) restoredItem;
@@ -368,7 +341,7 @@ public class NetworkManager {
 
         for (String uuid : getOwnedNetworkUuids(player)) {
             Optional<Network> network = NetworkManager.getNetwork(UUID.fromString(uuid));
-            network.ifPresent(NetworkManager::addNetwork);
+            network.ifPresent(NetworkManager::loadNetwork);
         }
 
         return networks;

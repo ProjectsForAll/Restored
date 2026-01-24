@@ -3,14 +3,17 @@ package host.plas.restored.data.blocks.impl;
 import host.plas.bou.commands.Sender;
 import host.plas.bou.gui.InventorySheet;
 import host.plas.bou.gui.ScreenManager;
+import host.plas.bou.gui.icons.BasicIcon;
 import host.plas.bou.gui.screens.ScreenInstance;
 import host.plas.bou.gui.screens.blocks.ScreenBlock;
+import host.plas.bou.items.ItemUtils;
 import host.plas.bou.utils.ColorUtils;
 import host.plas.restored.Restored;
 import host.plas.restored.data.Network;
 import host.plas.restored.data.blocks.BlockType;
 import host.plas.restored.data.blocks.NetworkBlock;
 import host.plas.restored.data.blocks.datablock.DataBlock;
+import host.plas.restored.data.blocks.inventory.InventoryBlock;
 import host.plas.restored.data.items.impl.ViewerItem;
 import host.plas.restored.data.screens.items.ViewerPage;
 import lombok.Getter;
@@ -26,10 +29,11 @@ import org.bukkit.persistence.PersistentDataContainer;
 import org.bukkit.persistence.PersistentDataType;
 
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 @Getter @Setter
-public class Viewer extends NetworkBlock {
+public class Viewer extends NetworkBlock implements InventoryBlock {
     public Viewer(Network network, Location location) {
         super(BlockType.VIEWER, network, location, ViewerItem::new);
     }
@@ -49,22 +53,70 @@ public class Viewer extends NetworkBlock {
     }
 
     @Override
+    public ItemStack tryAddItem(ItemStack stack) {
+        if (stack == null || stack.getType() == Material.AIR) {
+            return stack;
+        }
+
+        ItemStack r;
+        if (stack.getAmount() > 1) {
+            r = stack.clone();
+            r.setAmount(stack.getAmount() - 1);
+        } else {
+            r = null;
+        }
+
+        if (! canAddItem(stack)) {
+            return stack;
+        }
+
+        addItem(stack);
+
+        redraw();
+
+        return r;
+    }
+
+    public boolean canAddItem(ItemStack stack) {
+        AtomicBoolean canAdd = new AtomicBoolean(false);
+
+        getNetwork().ifPresent(network -> {
+            canAdd.set(network.canInsert(stack));
+        });
+
+        return canAdd.get();
+    }
+
+    public boolean addItem(ItemStack stack) {
+        AtomicBoolean added = new AtomicBoolean(false);
+
+        getNetwork().ifPresent(network -> {
+            added.set(network.insert(stack));
+        });
+
+        return added.get();
+    }
+
+    @Override
     public InventorySheet buildInventorySheet(Player player, ScreenBlock block) {
+        Restored.getInstance().logInfo("Building inventory sheet for viewer...");
+
         InventorySheet sheet = new InventorySheet(54);
 
         Optional<Network> networkOptional = getNetwork();
-        if (! networkOptional.isPresent()) {
+        if (networkOptional.isEmpty()) {
             Sender playerSender = new Sender(player);
             playerSender.sendMessage("&cThis block is not part of a network.");
             return sheet;
         }
         Network network = networkOptional.get();
 
-        ViewerPage page = network.getPage(1);
+        Optional<ViewerPage> pageOptional = network.getPage(1);
 
-        if (page == null) {
+        if (pageOptional.isEmpty()) {
             return sheet;
         }
+        ViewerPage page = pageOptional.get();
 
         buildPage(sheet, page);
 
@@ -85,11 +137,12 @@ public class Viewer extends NetworkBlock {
         }
         Network network = networkOptional.get();
 
-        ViewerPage page = network.getPage(pageIndex);
+        Optional<ViewerPage> pageOptional = network.getPage(pageIndex);
 
-        if (page == null) {
+        if (pageOptional.isEmpty()) {
             return;
         }
+        ViewerPage page = pageOptional.get();
 
         InventorySheet sheet = new InventorySheet(54);
 
@@ -99,6 +152,8 @@ public class Viewer extends NetworkBlock {
         String title = buildTitle(player, block);
 
         ScreenInstance screen = new ScreenInstance(player, this.getType(), inventorySheet);
+        screen.setTitle(title);
+        screen.setBlock(block);
 
         screen.open();
     }
@@ -120,19 +175,23 @@ public class Viewer extends NetworkBlock {
     }
 
     public void drawBottomBar(InventorySheet sheet, int currentPage) {
-        int offset = sheet.getSize() - 9;
+        sheet.addIcon(sheet.getSize() - 8 - 1, getPageLeft(sheet, currentPage));
+        sheet.addIcon(sheet.getSize() - 4 - 1, getPageMiddle(sheet, currentPage));
+        sheet.addIcon(sheet.getSize() - 0 - 1, getPageRight(sheet, currentPage));
+    }
 
-        sheet.addIcon(offset + 1, getPageLeft(sheet, currentPage));
-        sheet.addIcon(offset + 9, getPageRight(sheet, currentPage));
+    public Icon getPageMiddle(InventorySheet sheet, int page) {
+        ItemStack stack = ItemUtils.make(Material.KNOWLEDGE_BOOK, "&bPage&7: &a" + page);
+
+        return new BasicIcon(stack);
     }
 
     public Icon getPageLeft(InventorySheet sheet, int page) {
-        int offset = sheet.getSize() - 9;
+        int offset = sheet.getSize() - 8 - 1;
 
-        ItemStack stack = new ItemStack(Material.ARROW, 1);
+        ItemStack stack = ItemUtils.make(Material.ARROW, "&7<<< &ePrevious Page");
         ItemMeta meta = stack.getItemMeta();
         if (meta != null) {
-            meta.setDisplayName("§fPrevious Page");
 
             PersistentDataContainer container = meta.getPersistentDataContainer();
             container.set(new NamespacedKey(Restored.getInstance(), "current-page"), PersistentDataType.INTEGER, page);
@@ -150,7 +209,7 @@ public class Viewer extends NetworkBlock {
                 int currentPage = -1;
                 int actionPage = -1;
 
-                ItemStack s = screen.getItems().get(offset + 1).getItem();
+                ItemStack s = screen.getItems().get(offset).getItem();
                 if (s == null) {
                     return;
                 }
@@ -181,13 +240,11 @@ public class Viewer extends NetworkBlock {
     }
 
     public Icon getPageRight(InventorySheet sheet, int page) {
-        int offset = sheet.getSize() - 9;
+        int offset = sheet.getSize() - 0 - 1;
 
-        ItemStack stack = new ItemStack(Material.ARROW, 1);
+        ItemStack stack = ItemUtils.make(Material.ARROW, "&eNext Page &7>>>");
         ItemMeta meta = stack.getItemMeta();
         if (meta != null) {
-            meta.setDisplayName("§fNext Page");
-
             PersistentDataContainer container = meta.getPersistentDataContainer();
             container.set(new NamespacedKey(Restored.getInstance(), "current-page"), PersistentDataType.INTEGER, page);
             container.set(new NamespacedKey(Restored.getInstance(), "action-page"), PersistentDataType.INTEGER, page + 1);
@@ -204,7 +261,7 @@ public class Viewer extends NetworkBlock {
                 int currentPage = -1;
                 int actionPage = -1;
 
-                ItemStack s = screen.getItems().get(offset + 9).getItem();
+                ItemStack s = screen.getItems().get(offset).getItem();
                 if (s == null) {
                     return;
                 }

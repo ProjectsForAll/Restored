@@ -1,7 +1,6 @@
 package host.plas.restored.data.items.impl;
 
 import host.plas.restored.data.Network;
-import host.plas.restored.data.blocks.impl.Drive;
 import host.plas.restored.data.blocks.impl.Viewer;
 import host.plas.restored.data.items.IPlaceable;
 import host.plas.restored.data.items.ItemType;
@@ -11,8 +10,6 @@ import lombok.Setter;
 import org.bukkit.Material;
 import org.bukkit.block.Block;
 import org.bukkit.entity.Player;
-
-import java.math.BigInteger;
 
 @Getter @Setter
 public class ViewerItem extends RestoredItem implements IPlaceable {
@@ -38,7 +35,8 @@ public class ViewerItem extends RestoredItem implements IPlaceable {
 
     @Override
     public void onNoNetworkPlace(Block atBlock, Player placedBy) {
-        new Viewer(null, atBlock.getLocation());
+        Viewer viewer = new Viewer(null, atBlock.getLocation());
+        viewer.onPlaced();
 
         placeAsBlock(atBlock, placedBy);
     }

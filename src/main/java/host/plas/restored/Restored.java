@@ -8,6 +8,7 @@ import host.plas.restored.config.MainConfig;
 import host.plas.restored.config.NetworkMapConfig;
 import host.plas.restored.data.Network;
 import host.plas.restored.data.NetworkManager;
+import host.plas.restored.data.blocks.NetworkMap;
 import host.plas.restored.events.MainListener;
 import host.plas.restored.timers.NetworkSaveTimer;
 import lombok.Getter;
@@ -56,12 +57,16 @@ public final class Restored extends BetterPlugin {
         setNetworkPermissionsCMD(new NetworkPermissionsCMD());
 
         setNetworkSaveTimer(new NetworkSaveTimer());
+
+        NetworkMap.init();
     }
 
     @Override
     public void onBaseDisable() {
         // Plugin shutdown logic
-        NetworkManager.getNetworks().forEach(Network::onSave);
+        NetworkManager.getNetworks().forEach(Network::unload);
+
+        NetworkMap.stop();
     }
 
     /**

@@ -3,7 +3,6 @@ package host.plas.restored.data.items;
 import host.plas.restored.data.blocks.BlockType;
 import host.plas.restored.data.items.impl.*;
 import lombok.Getter;
-import lombok.Setter;
 
 import java.util.Optional;
 

@@ -1,15 +1,17 @@
 package host.plas.restored.config;
 
+import gg.drak.thebase.lib.leonhard.storage.sections.FlatFileSection;
+import gg.drak.thebase.objects.AtomicString;
+import gg.drak.thebase.storage.documents.SimpleJsonDocument;
 import host.plas.restored.Restored;
+import host.plas.restored.data.Network;
 import host.plas.restored.data.blocks.BlockLocation;
 import host.plas.restored.data.blocks.BlockType;
 import host.plas.restored.data.blocks.LocatedBlock;
 import host.plas.restored.data.blocks.SingleNetworkMap;
+import host.plas.restored.utils.IOUtils;
 import lombok.Getter;
 import lombok.Setter;
-import tv.quaint.objects.AtomicString;
-import tv.quaint.storage.documents.SimpleJsonDocument;
-import tv.quaint.thebase.lib.leonhard.storage.sections.FlatFileSection;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -20,7 +22,7 @@ import java.util.concurrent.ConcurrentSkipListSet;
 @Getter @Setter
 public class NetworkMapConfig extends SimpleJsonDocument {
     public NetworkMapConfig() {
-        super("network-map.json", Restored.getInstance(), false);
+        super("network-map.json", IOUtils.getStorageFolder(), false);
     }
 
     @Override
@@ -93,7 +95,7 @@ public class NetworkMapConfig extends SimpleJsonDocument {
         FlatFileSection section = getResource().getSection("networks." + singleNetworkMap.getIdentifier());
 
         singleNetworkMap.getLocatedBlocks().forEach((blockLocation, locatedBlock) -> {
-            section.set(locatedBlock.getIdentifier() + ".location", locatedBlock.getLocation().toString());
+            section.set(locatedBlock.getIdentifier() + ".location", locatedBlock.getLocation().asString());
             section.set(locatedBlock.getIdentifier() + ".type", locatedBlock.getType().name());
         });
 
@@ -112,28 +114,102 @@ public class NetworkMapConfig extends SimpleJsonDocument {
         deleteNetworkMap(singleNetworkMap.getIdentifier());
     }
 
-    public ConcurrentSkipListSet<String> getOwnedNetworks(String ownerUUID) {
-        ConcurrentSkipListSet<String> r = new ConcurrentSkipListSet<>();
-        FlatFileSection section = getResource().getSection("owners." + ownerUUID);
+    public String getNetworkId(String blockId) {
+        AtomicString r = new AtomicString("");
+        getNetworkMaps().forEach(singleNetworkMap -> {
+            singleNetworkMap.getLocatedBlocks().forEach((blockLocation, locatedBlock) -> {
+                if (locatedBlock.getIdentifier().equals(blockId)) {
+                    r.set(singleNetworkMap.getIdentifier());
+                }
+            });
+        });
+
+        return r.get();
+    }
+
+    public Optional<LocatedBlock> getLocatedBlock(String identifier) {
+        if (! containsLocatedBlock(identifier)) {
+            return Optional.empty();
+        }
+
+        FlatFileSection section = getResource().getSection("located-blocks." + identifier);
+
+        String location = section.getOrSetDefault("location", "");
+        String type = section.getOrSetDefault("type", "");
+
+        BlockType blockType = BlockType.valueOf(type);
+        BlockLocation blockLocation = BlockLocation.of(location);
+
+        LocatedBlock block = new LocatedBlock(identifier, getNetworkId(identifier), blockType, blockLocation);
+
+        return Optional.of(block);
+    }
+
+    public ConcurrentSkipListSet<String> getLocatedBlockIdentifiers() {
+        FlatFileSection section = getResource().getSection("located-blocks");
+        return new ConcurrentSkipListSet<>(section.singleLayerKeySet());
+    }
+
+    public boolean containsLocatedBlock(String identifier) {
+        return getLocatedBlockIdentifiers().contains(identifier);
+    }
+
+    public ConcurrentSkipListMap<BlockLocation, LocatedBlock> getLocatedBlocks() {
+        ConcurrentSkipListMap<BlockLocation, LocatedBlock> r = new ConcurrentSkipListMap<>();
+        FlatFileSection section = getResource().getSection("located-blocks");
 
         section.singleLayerKeySet().forEach(key -> {
-            r.addAll(section.getOrSetDefault(key, new ArrayList<>()));
+            try {
+                Optional<LocatedBlock> locatedBlockOptional = getLocatedBlock(key);
+                if (locatedBlockOptional.isEmpty()) return;
+
+                LocatedBlock locatedBlock = locatedBlockOptional.get();
+                BlockLocation blockLocation = locatedBlock.getLocation();
+
+                r.put(blockLocation, locatedBlock);
+            } catch (Exception e) {
+                Restored.getInstance().logWarning("Failed to load located block: " + key);
+                Restored.getInstance().logWarning(e);
+            }
         });
 
         return r;
+    }
+
+    public void saveLocatedBlock(LocatedBlock locatedBlock) {
+        FlatFileSection section = getResource().getSection("located-blocks");
+
+        section.set(locatedBlock.getIdentifier() + ".location", locatedBlock.getLocation().asString());
+        section.set(locatedBlock.getIdentifier() + ".type", locatedBlock.getType().name());
+    }
+
+    public void deleteLocatedBlock(String identifier) {
+        getResource().getSection("located-blocks").remove(identifier);
+    }
+
+    public void saveLocatedBlocks(Collection<LocatedBlock> locatedBlocks) {
+        locatedBlocks.forEach(this::saveLocatedBlock);
+    }
+
+    public ConcurrentSkipListSet<String> getOwnersOfNetworks() {
+        return new ConcurrentSkipListSet<>(singleLayerKeySet("owners"));
+    }
+
+    public ConcurrentSkipListSet<String> getOwnedNetworks(String ownerUUID) {
+        return new ConcurrentSkipListSet<>(getOrSetDefault("owners." + ownerUUID, new ArrayList<>()));
     }
 
     public ConcurrentSkipListMap<String, ConcurrentSkipListSet<String>> getOwnedNetworks() {
         ConcurrentSkipListMap<String, ConcurrentSkipListSet<String>> r = new ConcurrentSkipListMap<>();
-        FlatFileSection section = getResource().getSection("owners");
 
-        section.singleLayerKeySet().forEach(key -> {
-            r.put(key, getOwnedNetworks(key));
+        getOwnersOfNetworks().forEach(ownerUUID -> {
+            r.put(ownerUUID, getOwnedNetworks(ownerUUID));
         });
 
         return r;
     }
 
+    // Gets a owner UUID from a network identifier
     public Optional<String> getNetworkOwner(String identifier) {
         AtomicString r = new AtomicString(null);
 
@@ -151,7 +227,7 @@ public class NetworkMapConfig extends SimpleJsonDocument {
     }
 
     public void addOwnedNetwork(String ownerUUID, String identifier) {
-        ConcurrentSkipListSet<String> r = getOwnedNetworks(ownerUUID);
+        ConcurrentSkipListSet<String> r = new ConcurrentSkipListSet<>(getOwnedNetworks(ownerUUID));
         r.add(identifier);
 
         putOwnedNetworks(ownerUUID, r);
@@ -159,8 +235,12 @@ public class NetworkMapConfig extends SimpleJsonDocument {
         cleanOwnedNetworks();
     }
 
+    public void addOwnedNetwork(Network network) {
+        addOwnedNetwork(network.getOwnerUuid(), network.getIdentifier());
+    }
+
     public void removeOwnedNetwork(String ownerUUID, String identifier) {
-        ConcurrentSkipListSet<String> r = getOwnedNetworks(ownerUUID);
+        ConcurrentSkipListSet<String> r = new ConcurrentSkipListSet<>(getOwnedNetworks(ownerUUID));
         r.remove(identifier);
 
         putOwnedNetworks(ownerUUID, r);

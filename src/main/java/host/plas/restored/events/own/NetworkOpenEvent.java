@@ -1,5 +1,6 @@
 package host.plas.restored.events.own;
 
+import host.plas.bou.gui.screens.events.BlockOpenEvent;
 import host.plas.restored.data.Network;
 import host.plas.restored.data.blocks.NetworkBlock;
 import lombok.Getter;

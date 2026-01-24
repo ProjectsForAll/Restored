@@ -1,12 +1,17 @@
 package host.plas.restored.data.blocks;
 
+import gg.drak.thebase.objects.Identifiable;
+import host.plas.restored.data.Network;
+import host.plas.restored.data.NetworkManager;
+import host.plas.restored.data.blocks.datablock.DataBlock;
+import host.plas.restored.data.blocks.impl.Controller;
 import lombok.Getter;
 import lombok.Setter;
-import tv.quaint.objects.Identifiable;
 
 import java.util.Collection;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentSkipListMap;
+import java.util.concurrent.atomic.AtomicReference;
 
 @Getter @Setter
 public class SingleNetworkMap implements Identifiable {
@@ -22,7 +27,7 @@ public class SingleNetworkMap implements Identifiable {
     }
 
     public SingleNetworkMap(String identifier, String ownerUUID, Collection<LocatedBlock> locatedBlocks) {
-        this(identifier, wrapLocatedBlocks(locatedBlocks));
+        this(identifier, ownerUUID, wrapLocatedBlocks(locatedBlocks));
     }
 
     public void addLocatedBlock(LocatedBlock locatedBlock) {
@@ -73,11 +78,41 @@ public class SingleNetworkMap implements Identifiable {
     }
 
     public void save() {
-        NetworkMap.save(this);
+        NetworkMap.saveNetwork(this);
     }
 
     public void delete() {
         NetworkMap.delete(this);
+    }
+
+    public Optional<Network> getNetwork() {
+        return NetworkManager.getOrGetNetwork(identifier);
+    }
+
+    public Optional<Controller> getControllerImpl(Optional<Network> optionalNetwork) {
+        AtomicReference<Controller> found = new AtomicReference<>(null);
+
+        if (optionalNetwork.isEmpty()) return Optional.empty();
+
+        getController()
+                .flatMap(locatedBlock -> NetworkManager.getDataBlockAt(locatedBlock.getLocation().toBlock(), optionalNetwork.get()))
+                .flatMap(DataBlock::getNetworkBlock)
+                .ifPresent(networkBlock -> {
+                    if (networkBlock instanceof Controller) {
+                        found.set((Controller) networkBlock);
+                    }
+                });
+
+        return Optional.ofNullable(found.get());
+    }
+
+    public void unload() {
+        locatedBlocks.forEach((location, block) -> {
+            block.save();
+        });
+        locatedBlocks.clear();
+
+        NetworkMap.unloadSingleMap(getIdentifier());
     }
 
     public static ConcurrentSkipListMap<BlockLocation, LocatedBlock> wrapLocatedBlocks(Collection<LocatedBlock> locatedBlocks) {

@@ -1,36 +1,41 @@
 package host.plas.restored.data.blocks.impl;
 
+import gg.drak.thebase.lib.leonhard.storage.sections.FlatFileSection;
 import host.plas.bou.gui.InventorySheet;
 import host.plas.bou.gui.screens.blocks.ScreenBlock;
+import host.plas.bou.gui.screens.events.BlockCloseEvent;
 import host.plas.bou.gui.slots.Slot;
 import host.plas.bou.utils.ColorUtils;
+import host.plas.restored.Restored;
 import host.plas.restored.data.Network;
 import host.plas.restored.data.blocks.BlockType;
 import host.plas.restored.data.blocks.NetworkBlock;
 import host.plas.restored.data.blocks.datablock.DataBlock;
+import host.plas.restored.data.blocks.inventory.InventoryBlock;
 import host.plas.restored.data.disks.StorageDisk;
 import host.plas.restored.data.disks.impl.FourKDisk;
 import host.plas.restored.data.items.ItemManager;
-import host.plas.restored.data.items.ItemType;
-import host.plas.restored.data.items.RestoredItem;
 import host.plas.restored.data.items.impl.DriveItem;
 import host.plas.restored.data.items.impl.FourKDiskItem;
+import host.plas.restored.data.items.impl.GenericDiskItem;
+import host.plas.restored.data.screens.items.IndexedItem;
 import lombok.Getter;
 import lombok.Setter;
 import mc.obliviate.inventory.Icon;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.entity.Player;
+import org.bukkit.inventory.Inventory;
+import org.bukkit.inventory.InventoryView;
 import org.bukkit.inventory.ItemStack;
-import tv.quaint.thebase.lib.leonhard.storage.sections.FlatFileSection;
 
 import java.util.Optional;
-import java.util.UUID;
 import java.util.concurrent.ConcurrentSkipListMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
 @Getter @Setter
-public class Drive extends NetworkBlock {
+public class Drive extends NetworkBlock implements InventoryBlock {
     private ConcurrentSkipListMap<Integer, StorageDisk> disks; // Set of disks in the drive
 
     public Drive(Network network, Location location) {
@@ -55,7 +60,7 @@ public class Drive extends NetworkBlock {
             int index = Integer.parseInt(s);
             String identifier = section.getString("disks." + s);
 
-            StorageDisk disk = new StorageDisk(identifier);
+            StorageDisk disk = new StorageDisk(this, identifier);
 
             disks.put(index, disk);
         });
@@ -70,6 +75,8 @@ public class Drive extends NetworkBlock {
 
     @Override
     public InventorySheet buildInventorySheet(Player player, ScreenBlock block) {
+        Restored.getInstance().logInfo("Building inventory sheet for drive...");
+
         InventorySheet sheet = new InventorySheet(getType().getSlots());
 
         sheet.forEachSlot(this::buildDriveIcon);
@@ -78,32 +85,92 @@ public class Drive extends NetworkBlock {
     }
 
     public void buildDriveIcon(Slot slot) {
+        Restored.getInstance().logInfo("Building drive icon for slot: " + slot.getIndex());
+
         int index = slot.getIndex();
 
-        getDriveIcon(index).ifPresentOrElse(slot::setIcon, () -> {
-            slot.setIcon(getClickableAir());
-        });
+        getDriveIcon(index).ifPresent(slot::setIcon);
     }
 
-    public Icon getClickableAir() {
-        Icon icon = new Icon(new ItemStack(Material.AIR));
+    @Override
+    public void onClose(BlockCloseEvent event) {
+        InventoryView view = event.getPlayer().getOpenInventory();
+        Inventory inventory = view.getTopInventory();
+        int index = 0;
 
-        icon.onClick(event -> {
-            ItemStack stack = event.getCursor();
-            if (stack == null || stack.getType() == Material.AIR) {
-                return;
-            }
+        prepareDisks();
 
-            if (stack.getAmount() != 1) return;
+        for (ItemStack stack : inventory.getContents()) {
+            IndexedItem item = new IndexedItem(stack, index, inventory, event.getPlayer());
+            trySaveItem(item);
+            index ++;
+        }
+    }
 
-            if (! isCompatibleDisk(stack)) {
-                return;
-            }
+    @Override
+    public ItemStack tryAddItem(ItemStack stack) {
+        Restored.getInstance().logInfo("Trying to add item to drive...");
 
-            event.setCancelled(false);
-        });
+        if (stack == null || stack.getType() == Material.AIR) {
+            Restored.getInstance().logInfo("Item is null or air.");
 
-        return icon;
+            return stack;
+        }
+
+        ItemStack r;
+        if (stack.getAmount() > 1) {
+            r = stack.clone();
+            r.setAmount(stack.getAmount() - 1);
+        } else {
+            r = null;
+        }
+
+        if (! isCompatibleDisk(stack)) {
+            Restored.getInstance().logInfo("Item is not a disk.");
+
+            return stack;
+        }
+
+        addDisk(stack, disks.size());
+
+        redraw();
+
+        return r;
+    }
+
+    // Prepare disks to be saved.
+    public void prepareDisks() {
+        setDisks(new ConcurrentSkipListMap<>());
+    }
+
+    public void trySaveItem(IndexedItem item) {
+        ItemStack stack = item.getItemStack();
+        if (stack == null || stack.getType() == Material.AIR) {
+            return;
+        }
+
+        if (! isCompatibleDisk(stack)) {
+            ItemStack toGive = stack.clone();
+            item.getViewer().getInventory().addItem(toGive);
+
+            item.remove();
+
+            return;
+        }
+
+        if (stack.getAmount() != 1) {
+            int toGiveBack = stack.getAmount() - 1;
+            stack.setAmount(1);
+            item.replace(stack);
+
+            ItemStack toGive = stack.clone();
+            toGive.setAmount(toGiveBack);
+            item.getViewer().getInventory().addItem(toGive);
+
+            return;
+        }
+
+        addDisk(stack, item.getSlotNumber());
     }
 
     public boolean isCompatibleDisk(ItemStack stack) {
@@ -111,19 +178,21 @@ public class Drive extends NetworkBlock {
     }
 
     public void addDisk(ItemStack stack, int index) {
-        if (stack == null || stack.getType() == Material.AIR) {
-            return;
-        }
+        Restored.getInstance().logInfo("Adding disk to drive...");
 
-        if (stack.getAmount() != 1) return;
-
-        if (! isCompatibleDisk(stack)) {
-            return;
-        }
-
-        FourKDisk disk = new FourKDisk(UUID.randomUUID().toString());
-
-        putDisk(index, disk);
+        ItemManager.readItem(stack).ifPresentOrElse(item -> {
+            if (item instanceof FourKDiskItem) {
+                FourKDiskItem diskItem = (FourKDiskItem) item;
+                FourKDisk disk = new FourKDisk(this, diskItem.getIdentifier());
+                putDisk(index, disk);
+            } else if (item instanceof GenericDiskItem) {
+                GenericDiskItem diskItem = (GenericDiskItem) item;
+                StorageDisk disk = new StorageDisk(this, diskItem.getIdentifier());
+                putDisk(index, disk);
+            }
+        }, () -> {
+            Restored.getInstance().logInfo("Item is not a disk.");
+        });
     }
 
     public Optional<Icon> getDriveIcon(int index) {
@@ -153,7 +222,24 @@ public class Drive extends NetworkBlock {
     }
 
     public void putDisk(int index, StorageDisk disk) {
+        Restored.getInstance().logInfo("Putting disk in drive...");
+
+        AtomicBoolean hasDisk = new AtomicBoolean(false);
+        getNetwork().ifPresentOrElse(network -> {
+            if (network.getDisks().contains(disk)) {
+                Restored.getInstance().logInfo("Disk is in the network already!");
+                hasDisk.set(true);
+            }
+        }, () -> {
+            Restored.getInstance().logInfo("No network found for drive.");
+        });
+
+        if (hasDisk.get()) return;
+
         disks.put(index, disk);
+        onSave();
+
+        Restored.getInstance().logInfo("Disk put in drive.");
     }
 
     @Override

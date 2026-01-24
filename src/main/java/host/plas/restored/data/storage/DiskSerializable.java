@@ -1,12 +1,12 @@
 package host.plas.restored.data.storage;
 
+import gg.drak.thebase.storage.documents.SimpleJsonDocument;
 import host.plas.bou.gui.items.ItemData;
-import host.plas.restored.Restored;
 import host.plas.restored.data.disks.StorageDisk;
 import host.plas.restored.data.screens.items.StoredItem;
+import host.plas.restored.utils.IOUtils;
 import lombok.Getter;
 import lombok.Setter;
-import tv.quaint.storage.documents.SimpleJsonDocument;
 
 import java.io.File;
 import java.math.BigInteger;
@@ -17,22 +17,9 @@ public class DiskSerializable extends SimpleJsonDocument {
     private StorageDisk disk;
 
     public DiskSerializable(StorageDisk disk) {
-        super(disk.getIdentifier() + ".json", getDiskStorage(), false);
+        super(disk.getIdentifier() + ".json", IOUtils.getDisksFolder(), false);
 
         this.disk = disk;
-    }
-
-    public static File getDiskStorage() {
-        File storage = new File(Restored.getInstance().getDataFolder(), "storage");
-        if (!storage.exists()) {
-            storage.mkdirs();
-        }
-        File disks = new File(storage, "disks");
-        if (!disks.exists()) {
-            disks.mkdirs();
-        }
-
-        return disks;
     }
 
     @Override

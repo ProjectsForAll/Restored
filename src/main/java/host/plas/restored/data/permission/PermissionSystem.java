@@ -1,24 +1,40 @@
 package host.plas.restored.data.permission;
 
+import gg.drak.thebase.lib.leonhard.storage.sections.FlatFileSection;
 import host.plas.restored.data.Network;
+import host.plas.restored.data.blocks.NetworkMap;
 import lombok.Getter;
 import lombok.Setter;
 import org.bukkit.entity.Player;
-import tv.quaint.thebase.lib.leonhard.storage.sections.FlatFileSection;
+import org.jetbrains.annotations.NotNull;
 
 import java.util.Arrays;
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.concurrent.ConcurrentSkipListSet;
 
 @Getter @Setter
-public class PermissionSystem {
-    private Network network;
+public class PermissionSystem implements Comparable<PermissionSystem> {
+    private String networkId;
     private ConcurrentSkipListMap<PermissionNode, ConcurrentSkipListSet<String>> trusted; // uuids
 
-    public PermissionSystem(Network network) {
-        this.network = network;
+    public PermissionSystem(String networkId) {
+        this.networkId = networkId;
         this.trusted = new ConcurrentSkipListMap<>();
+    }
+
+    public PermissionSystem(Network network) {
+        this(network.getIdentifier());
+    }
+
+    public Optional<Network> getNetwork() {
+        return NetworkMap.getNetwork(networkId);
+    }
+
+    @Override
+    public int compareTo(@NotNull PermissionSystem o) {
+        return networkId.compareTo(o.networkId);
     }
 
     public void load(FlatFileSection section) {
@@ -87,7 +103,7 @@ public class PermissionSystem {
     }
 
     public boolean isOwner(String uuid) {
-        return network.getOwnerUuid().equals(uuid);
+        return getNetwork().map(network -> network.getOwnerUuid().equals(uuid)).orElse(false);
     }
 
     public boolean hasPermission(Player player, PermissionNode permission) {

@@ -1,14 +1,20 @@
 package host.plas.restored.data.blocks;
 
+import host.plas.bou.gui.InventorySheet;
+import host.plas.bou.gui.ScreenManager;
+import host.plas.bou.gui.screens.ScreenInstance;
 import host.plas.bou.gui.screens.blocks.ScreenBlock;
+import host.plas.restored.Restored;
 import host.plas.restored.data.Network;
 import host.plas.restored.data.NetworkManager;
 import host.plas.restored.data.blocks.datablock.DataBlock;
 import host.plas.restored.data.blocks.datablock.IDatalizable;
+import host.plas.restored.data.blocks.impl.Controller;
 import host.plas.restored.data.items.RestoredItem;
 import lombok.Getter;
 import lombok.Setter;
 import org.bukkit.Location;
+import org.bukkit.Material;
 import org.bukkit.block.Block;
 import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.inventory.ItemStack;
@@ -73,12 +79,28 @@ public abstract class NetworkBlock extends ScreenBlock implements IDatalizable {
     public abstract void onSave();
 
     public void onPlaced() {
+        Restored.getInstance().logInfo("Placed block: " + this.getIdentifier());
+
         saveDataBlock();
+        LocatedBlock block = new LocatedBlock(this);
+        NetworkMap.addLocatedBlock(block);
+        block.save();
+
+        network.ifPresent(value -> {
+            SingleNetworkMap map = value.getMap();
+            map.addLocatedBlock(block);
+            map.save();
+        });
     }
 
     public void onBreak(BlockBreakEvent event) {
         Block block = event.getBlock();
         if (! getBlock().equals(block)) return;
+
+        if (this instanceof Controller) {
+            Controller controller = (Controller) this;
+            getNetwork().ifPresent(Network::delete);
+        }
 
         dropBlock();
 
@@ -90,9 +112,17 @@ public abstract class NetworkBlock extends ScreenBlock implements IDatalizable {
     public void clean() {
         network.ifPresent(value -> value.removeBlock(this));
         network = Optional.empty();
-        getDataBlock().setNetwork(Optional.empty());
 
-        saveDataBlock();
+        getDataBlock().setNetwork(Optional.empty());
+        getDataBlock().delete();
+
+        NetworkMap.getLocatedBlock(this.getIdentifier()).ifPresent(LocatedBlock::remove);
+
+        setAsAir();
+    }
+
+    public void setAsAir() {
+        getBlock().setType(Material.AIR);
     }
 
     public void dropBlock() {
@@ -117,5 +147,15 @@ public abstract class NetworkBlock extends ScreenBlock implements IDatalizable {
 
     public BlockLocation getBlockLocation() {
         return BlockLocation.of(getLocation());
+    }
+
+    public void redraw() {
+        ScreenManager.getPlayersOf(this).forEach(screenInstance -> {
+            screenInstance.close();
+
+            InventorySheet sheet = buildInventorySheet(screenInstance.player, this);
+            ScreenInstance instance = new ScreenInstance(screenInstance.player, screenInstance.getType(), sheet);
+            instance.setBlock(this);
+        });
     }
 }

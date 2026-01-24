@@ -6,11 +6,6 @@ import host.plas.bou.sql.DatabaseType;
 import host.plas.restored.Restored;
 import lombok.Getter;
 import lombok.Setter;
-import tv.quaint.thebase.lib.hikari.HikariConfig;
-import tv.quaint.thebase.lib.hikari.HikariDataSource;
-
-import java.io.File;
-import java.sql.Connection;
 
 @Getter @Setter
 public class SQLiteDS extends DBOperator {

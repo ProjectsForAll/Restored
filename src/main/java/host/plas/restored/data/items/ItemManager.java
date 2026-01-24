@@ -4,6 +4,7 @@ import host.plas.restored.Restored;
 import host.plas.restored.data.items.impl.*;
 import lombok.Getter;
 import lombok.Setter;
+import org.bukkit.NamespacedKey;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.persistence.PersistentDataContainer;
@@ -46,7 +47,7 @@ public class ItemManager {
         }
     }
 
-    public static RestoredItem readItem(ItemStack stack) {
+    public static RestoredItem readItemHard(ItemStack stack) {
         ItemType type = getTypeFrom(stack);
         switch (type) {
             case CONTROLLER:
@@ -56,23 +57,42 @@ public class ItemManager {
             case VIEWER:
                 return new ViewerItem();
             case GENERIC_DISK:
-                return new GenericDiskItem(ItemType.GENERIC_DISK, readCapacity(stack));
+                return new GenericDiskItem(ItemType.GENERIC_DISK, readCapacity(stack).get(), readDiskIdentifier(stack).get());
             case FOUR_K_DISK:
-                return new FourKDiskItem();
+                return new FourKDiskItem(readDiskIdentifier(stack).get());
             default:
                 Restored.getInstance().logInfo("Item has no type key...");
                 return null;
         }
     }
 
-    public static BigInteger readCapacity(ItemStack stack) {
+    public static Optional<RestoredItem> readItem(ItemStack stack) {
+        return Optional.ofNullable(readItemHard(stack));
+    }
+
+    public static Optional<String> readDiskIdentifier(ItemStack stack) {
+        return readString(GenericDiskItem.IDENTIFIER_KEY, stack);
+    }
+
+    public static Optional<BigInteger> readCapacity(ItemStack stack) {
+        Optional<String> capacity = readString(GenericDiskItem.CAPACITY_KEY, stack);
+        return capacity.map(BigInteger::new);
+    }
+
+    public static Optional<String> readString(String key, ItemStack stack) {
+        NamespacedKey namespacedKey = getNamedKey(key);
+
         ItemMeta meta = stack.getItemMeta();
-        if (meta == null) return null;
+        if (meta == null) return Optional.empty();
 
         PersistentDataContainer container = meta.getPersistentDataContainer();
-        if (! container.has(GenericDiskItem.getCapacityKey())) return null;
+        if (! container.has(namespacedKey, PersistentDataType.STRING)) return Optional.empty();
 
-        return new BigInteger(container.get(GenericDiskItem.getCapacityKey(), PersistentDataType.STRING));
+        return Optional.ofNullable(container.get(namespacedKey, PersistentDataType.STRING));
+    }
+
+    public static NamespacedKey getNamedKey(String key) {
+        return new NamespacedKey(Restored.getInstance(), key);
     }
 
     public static Optional<RestoredItem> getItem(String item, String... args) {
@@ -87,8 +107,8 @@ public class ItemManager {
                 case VIEWER:
                     return Optional.of(new ViewerItem());
                 case GENERIC_DISK:
-                    if (args.length == 1) {
-                        return Optional.of(new GenericDiskItem(ItemType.GENERIC_DISK, new BigInteger(args[0])));
+                    if (args.length == 2) {
+                        return Optional.of(new GenericDiskItem(ItemType.GENERIC_DISK, new BigInteger(args[0]), args[1]));
                     }
 
                     return Optional.of(new GenericDiskItem(ItemType.GENERIC_DISK, new BigInteger("1000")));

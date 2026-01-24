@@ -1,7 +1,9 @@
 package host.plas.restored.data.disks;
 
+import gg.drak.thebase.objects.Identifiable;
 import host.plas.bou.utils.ColorUtils;
 import host.plas.restored.Restored;
+import host.plas.restored.data.blocks.impl.Drive;
 import host.plas.restored.data.screens.items.StoredItem;
 import host.plas.restored.data.storage.DiskSerializable;
 import lombok.Getter;
@@ -12,7 +14,6 @@ import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.persistence.PersistentDataContainer;
 import org.bukkit.persistence.PersistentDataType;
-import tv.quaint.objects.Identifiable;
 
 import java.math.BigInteger;
 import java.util.ArrayList;
@@ -27,6 +28,7 @@ public class StorageDisk implements Identifiable {
     private String identifier; // in UUID format
     private BigInteger capacity; // in items (not stacks)
     private ConcurrentSkipListSet<StoredItem> contents; // Map of ItemStacks to their quantity
+    private Drive drive;
 
     private DiskSerializable storage;
 
@@ -34,7 +36,8 @@ public class StorageDisk implements Identifiable {
         return UUID.fromString(identifier);
     }
 
-    public StorageDisk(String identifier) {
+    public StorageDisk(Drive drive, String identifier) {
+        this.drive = drive;
         this.identifier = identifier;
 
         this.storage = new DiskSerializable(this);

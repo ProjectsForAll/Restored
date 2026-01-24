@@ -1,8 +1,10 @@
 name: '${name}'
 version: '${version}'
 main: '${main}'
+
 authors:
-  - Drakify
+  - Drak
+
 api-version: 1.13
 folia-supported: true
 

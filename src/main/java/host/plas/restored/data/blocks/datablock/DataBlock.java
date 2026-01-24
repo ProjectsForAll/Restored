@@ -1,9 +1,12 @@
 package host.plas.restored.data.blocks.datablock;
 
+import gg.drak.thebase.lib.leonhard.storage.sections.FlatFileSection;
+import gg.drak.thebase.objects.Identifiable;
 import host.plas.restored.Restored;
 import host.plas.restored.config.BlockMap;
 import host.plas.restored.data.Network;
 import host.plas.restored.data.NetworkManager;
+import host.plas.restored.data.blocks.BlockLocation;
 import host.plas.restored.data.blocks.BlockType;
 import host.plas.restored.data.blocks.NetworkBlock;
 import host.plas.restored.data.blocks.impl.Controller;
@@ -12,12 +15,8 @@ import host.plas.restored.data.blocks.impl.Viewer;
 import lombok.Getter;
 import lombok.NonNull;
 import lombok.Setter;
-import org.bukkit.Bukkit;
 import org.bukkit.Location;
-import org.bukkit.World;
 import org.bukkit.block.Block;
-import tv.quaint.objects.Identifiable;
-import tv.quaint.thebase.lib.leonhard.storage.sections.FlatFileSection;
 
 import java.util.Map;
 import java.util.Optional;
@@ -26,12 +25,14 @@ import java.util.concurrent.ConcurrentSkipListMap;
 @Getter @Setter
 public class DataBlock implements Identifiable {
     private String identifier;
+    private BlockLocation blockLocation;
     private Optional<Network> network;
     private BlockType type;
     private ConcurrentSkipListMap<String, Object> data;
 
     public DataBlock(Block block, Optional<Network> network, BlockType type) {
         this.identifier = BlockMap.getKey(block);
+        this.blockLocation = BlockLocation.of(block);
         this.network = network;
         this.type = type;
 
@@ -59,17 +60,13 @@ public class DataBlock implements Identifiable {
     }
 
     public Optional<Location> readLocation() {
-        String[] split = identifier.split(":");
-        World world = Bukkit.getWorld(split[0]);
-        if (world == null) {
+        String locationString = identifier; // location.
+        if (locationString == null) {
             return Optional.empty();
         }
 
-        int x = Integer.parseInt(split[1]);
-        int y = Integer.parseInt(split[2]);
-        int z = Integer.parseInt(split[3]);
-
-        return Optional.of(new Location(world, x, y, z));
+        BlockLocation blockLocation = BlockLocation.of(locationString);
+        return Optional.of(blockLocation.toLocation());
     }
 
     public FlatFileSection getSection() {
@@ -181,5 +178,9 @@ public class DataBlock implements Identifiable {
             default:
                 return Optional.empty();
         }
+    }
+
+    public void delete() {
+        Restored.getBlockMap().removeBlock(blockLocation);
     }
 }

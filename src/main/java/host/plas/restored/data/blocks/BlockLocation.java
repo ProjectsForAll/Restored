@@ -2,6 +2,7 @@ package host.plas.restored.data.blocks;
 
 import lombok.Getter;
 import lombok.Setter;
+import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.block.Block;
 import org.jetbrains.annotations.NotNull;
@@ -43,7 +44,18 @@ public class BlockLocation implements Comparable<BlockLocation> {
         return "!!" + world + ";" + x + ";" + y + ";" + z + ";";
     }
 
+    public Block toBlock() {
+        return new Location(Bukkit.getWorld(world), x, y, z).getBlock();
+    }
+
+    public Location toLocation() {
+        return toBlock().getLocation();
+    }
+
     public static BlockLocation of(String string) {
+        if (string.startsWith("!!")) {
+            string = string.substring(2);
+        }
         String[] split = string.split(";");
         return new BlockLocation(split[0], Integer.parseInt(split[1]), Integer.parseInt(split[2]), Integer.parseInt(split[3]));
     }

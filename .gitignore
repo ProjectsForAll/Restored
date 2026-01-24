@@ -117,7 +117,7 @@ run/
 /gradle/
 /.idea/
 /.gradle/
-/gradle/
+/.vscode/
 
 /target/
 /.fastRequest/

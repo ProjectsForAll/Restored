@@ -3,7 +3,7 @@ package host.plas.restored.data.blocks;
 import host.plas.restored.Restored;
 import host.plas.restored.config.NetworkMapConfig;
 import host.plas.restored.data.Network;
-import host.plas.restored.data.blocks.impl.Controller;
+import host.plas.restored.data.NetworkManager;
 import lombok.Getter;
 import lombok.Setter;
 import org.bukkit.Location;
@@ -22,11 +22,11 @@ public class NetworkMap {
     @Getter @Setter
     private static ConcurrentSkipListMap<BlockLocation, LocatedBlock> locatedBlocks = new ConcurrentSkipListMap<>();
 
-    public static void addNetworkMap(SingleNetworkMap singleNetworkMap) {
+    public static void loadSingleMap(SingleNetworkMap singleNetworkMap) {
         networkMaps.add(singleNetworkMap);
     }
 
-    public static void removeNetworkMap(String identifier) {
+    public static void unloadSingleMap(String identifier) {
         networkMaps.removeIf(singleNetworkMap -> singleNetworkMap.getIdentifier().equals(identifier));
     }
 
@@ -127,34 +127,58 @@ public class NetworkMap {
         return Restored.getNetworkMapConfig();
     }
 
-    public static void saveAll() {
+    public static void saveAllNetworks() {
         getConfig().saveNetworkMaps(networkMaps);
     }
 
-    public static void save(String identifier) {
-        getNetworkMap(identifier).ifPresent(NetworkMap::save);
+    public static void saveNetwork(String identifier) {
+        getNetworkMap(identifier).ifPresent(NetworkMap::saveNetwork);
     }
 
-    public static void save(SingleNetworkMap singleNetworkMap) {
+    public static void saveNetwork(Network network) {
+        saveNetwork(network.getIdentifier());
+    }
+
+    public static void saveNetwork(SingleNetworkMap singleNetworkMap) {
         getConfig().saveNetworkMap(singleNetworkMap);
     }
 
-    public static void loadAll() {
+    public static void loadAllNetworks() {
         networkMaps = getConfig().getNetworkMaps();
     }
 
-    public static void load(String identifier) {
-        getConfig().getNetworkMap(identifier).ifPresent(NetworkMap::addNetworkMap);
+    public static void loadNetwork(String identifier) {
+        getConfig().getNetworkMap(identifier).ifPresent(NetworkMap::loadSingleMap);
+    }
+
+    public static void saveAllLocatedBlocks() {
+        getConfig().saveLocatedBlocks(locatedBlocks.values());
+    }
+
+    public static void saveLocatedBlock(LocatedBlock locatedBlock) {
+        getConfig().saveLocatedBlock(locatedBlock);
+    }
+
+    public static void loadAllLocatedBlocks() {
+        locatedBlocks = getConfig().getLocatedBlocks();
+    }
+
+    public static void loadLocatedBlock(LocatedBlock locatedBlock) {
+        getConfig().getLocatedBlock(locatedBlock.getIdentifier()).ifPresent(NetworkMap::addLocatedBlock);
     }
 
     public static void init() {
-        loadAll();
+        loadAllNetworks();
+
+        loadAllLocatedBlocks();
 
         // do other things
     }
 
     public static void stop() {
-        saveAll();
+        saveAllNetworks();
+
+        saveAllLocatedBlocks();
 
         // do other things
     }
@@ -162,29 +186,55 @@ public class NetworkMap {
     public static Network createNetwork(Block block, Player player) {
         String identifier = generateUUID();
 
-        return new Network(identifier, block, player);
+        Network network = new Network(identifier, block, player);
+
+        NetworkManager.loadNetwork(network);
+
+        createNetworkMap(network);
+
+        return network;
     }
 
-    public static void addNetwork(Network network) {
-        ConcurrentSkipListSet<LocatedBlock> locatedBlocks = new ConcurrentSkipListSet<>();
+    public static void createNetworkMap(Network network) {
+        SingleNetworkMap singleNetworkMap = new SingleNetworkMap(network.getIdentifier(), network.getOwnerUuid(), new ConcurrentSkipListSet<>());
 
         network.getBlocks().forEach(networkBlock -> {
             LocatedBlock locatedBlock = new LocatedBlock(networkBlock.getIdentifier(), network.getIdentifier(), networkBlock.getType(), networkBlock.getBlockLocation());
-            locatedBlocks.add(locatedBlock);
+            singleNetworkMap.addLocatedBlock(locatedBlock);
         });
 
-        SingleNetworkMap singleNetworkMap = new SingleNetworkMap(network.getIdentifier(), network.getOwnerUuid(), locatedBlocks);
-
-        addNetworkMap(singleNetworkMap);
+        loadSingleMap(singleNetworkMap);
     }
 
     public static void delete(String identifier) {
         getConfig().deleteNetworkMap(identifier);
 
-        removeNetworkMap(identifier);
+        unloadSingleMap(identifier);
     }
 
     public static void delete(SingleNetworkMap singleNetworkMap) {
         delete(singleNetworkMap.getIdentifier());
+    }
+
+    public static boolean hasNetworkHardLookup(String identifier) {
+        return getConfig().containsNetwork(identifier);
+    }
+
+    public static boolean hasNetwork(String identifier) {
+        return getNetworkMap(identifier).isPresent();
+    }
+
+    public static void onNetworkLoad(Network network) {
+        if (hasNetwork(network.getIdentifier())) {
+            return;
+        } else if (hasNetworkHardLookup(network.getIdentifier())) {
+            loadNetwork(network.getIdentifier());
+        } else {
+            createNetworkMap(network);
+        }
+    }
+
+    public static Optional<Network> getNetwork(String networkId) {
+        return getNetworkMap(networkId).flatMap(SingleNetworkMap::getNetwork);
     }
 }

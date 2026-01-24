@@ -1,12 +1,13 @@
 package host.plas.restored.config;
 
+import gg.drak.thebase.storage.documents.SimpleJsonDocument;
 import host.plas.restored.Restored;
 import host.plas.restored.data.Network;
+import host.plas.restored.data.blocks.BlockLocation;
 import host.plas.restored.data.blocks.datablock.DataBlock;
 import lombok.Getter;
 import lombok.Setter;
 import org.bukkit.block.Block;
-import tv.quaint.storage.documents.SimpleJsonDocument;
 
 import java.util.Optional;
 
@@ -26,8 +27,12 @@ public class BlockMap extends SimpleJsonDocument {
 
     }
 
+    public static String getKey(BlockLocation blockLocation) {
+        return blockLocation.asString();
+    }
+
     public static String getKey(Block block) {
-        return block.getWorld().getName() + ":" + block.getX() + ":" + block.getY() + ":" + block.getZ();
+        return getKey(BlockLocation.of(block));
     }
 
     public Optional<DataBlock> getDataBlockAt(Block block) {
@@ -74,6 +79,10 @@ public class BlockMap extends SimpleJsonDocument {
 
     public void removeBlock(Block block) {
         getResource().remove(getKey(block));
+    }
+
+    public void removeBlock(BlockLocation blockLocation) {
+        getResource().remove(getKey(blockLocation));
     }
 
     public Optional<Network> getNetworkAtBlock(Block block) {

@@ -4,6 +4,7 @@ import host.plas.bou.commands.Sender;
 import host.plas.bou.gui.InventorySheet;
 import host.plas.bou.gui.screens.blocks.ScreenBlock;
 import host.plas.bou.utils.ColorUtils;
+import host.plas.restored.Restored;
 import host.plas.restored.data.Network;
 import host.plas.restored.data.blocks.BlockType;
 import host.plas.restored.data.blocks.NetworkBlock;
@@ -43,6 +44,8 @@ public class Controller extends NetworkBlock {
 
     @Override
     public InventorySheet buildInventorySheet(Player player, ScreenBlock block) {
+        Restored.getInstance().logInfo("Building inventory sheet for controller...");
+
         InventorySheet sheet = new InventorySheet(getType().getSlots());
 
         sheet.addIcon(4, getMainIcon(player, block));
@@ -80,6 +83,6 @@ public class Controller extends NetworkBlock {
 
     @Override
     public String buildTitle(Player player, ScreenBlock block) {
-        return ColorUtils.colorizeHard("&cDrive");
+        return ColorUtils.colorizeHard("&aNetwork Controller");
     }
 }
