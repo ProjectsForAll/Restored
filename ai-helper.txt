@@ -1,0 +1,58 @@
+context of this project:
+- this project is supposed to very closely resemble something like RefinedStorage, but for Spigot/Paper servers.
+
+how this is supposed to work:
+- players can place Networks in the Spigot or Paper server.
+
+definitions:
+"Network"/"Networks":
+- a player can have multiple per world/server
+- a player cannot access someone else's Network unless the owner of said Network permits them with the command
+- a network has different parts: Controller, Drive, Viewer, Crafting Viewer
+- notes:
+  - no power needed (this is different than RefinedStorage)
+  - any orthagonally connected Network blocks/parts where said orthagonally connected Network blocks/parts contain 1 and only 1 Controller is considered a Network.
+    - If any orthagonally connected Network blocks/parts is going to contain 2 or more Controllers (check upon placement of the Controller), the server should disallow them from placing said Controller.
+    - If an orthagonally connected set of Network blocks/parts contains 2 or more Controllers for whatever reason, the Network should use the original/defined Controller and the server should set any other Controller to air and remove it from being tracked.
+  - positions of blocks in each Network is stored in a database (defined later in this document)
+  - uuid of Network also stored in the database
+
+"Controller":
+- chest interface (3 rows) that shows the Network uuid and owner. (displayed on a nether star)
+- whoever places the Controller (which creates the Network), is the Network's owner.
+
+"Drive":
+- hopper interface that allows players to insert Disks into the slots.
+
+"Disk"/"Disks":
+- an item that has a uuid assigned to it.
+  - this uuid is how the plugin can figure out what is stored on the Disk.
+- has a size.
+  - for example: 1024
+  - is the amount of total items the drive can store.
+  - note: any drive can store effectively infinite types of items (Bukkit Materials).
+- how is this stored by the plugin:
+  - in a database.
+    - can either be SQLITE or MYSQL. look at this to see an example of how this should be set up code-wise: https://github.com/ProjectsForAll/ExampleProject (specifically: https://github.com/ProjectsForAll/ExampleProject/tree/master/src/main/java/host/plas/exampleproject/database and files under it)
+  - for item serialization, use this (which is used with compileOnly already): https://github.com/Streamline-Essentials/BukkitOfUtils/blob/master/src/main/java/host/plas/bou/items/ItemUtils.java#L79 and https://github.com/Streamline-Essentials/BukkitOfUtils/blob/master/src/main/java/host/plas/bou/items/ItemUtils.java#L89
+
+"Viewer":
+- just shows a full 6x9 (6 chest rows) of items that are in the Network.
+  - 5 of the rows are items, the last row has arrows in it that the player can paginate with.
+
+"Crafting Viewer"
+- Viewer, but has slots set aside for crafting.
+  - slots 6 to 8, slots 15 to 17, and slots 24 to 26 are for the crafting grid.
+  - slot 35 is a crafting table that the player clicks.
+    - left click = craft 1
+    - shift left click = craft stack
+    - right click = clear crafting grid (put items back into Network)
+  - slot 36 is a nametag that when they click.
+    - left click = it opens an Anvil GUI that when you put something in, it will search for that in the Network (filters the view)
+    - right click = clear the filter (regular search)
+    - shift left click = use last filter
+    - notes: filters are tied to the player, not for all users using the Network.
+  - bottom row (6) is still pagination.
+  - column 0 to 4 (not bottom row (6)) is items in the Network.
+  - column 5 (not bottom row (6)) is black stained glass that doesn't do anything.
+  - slots 42 to 44 is also black stained glass that doesn't do anything.
