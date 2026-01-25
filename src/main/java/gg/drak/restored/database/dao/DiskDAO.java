@@ -17,8 +17,8 @@ import java.util.concurrent.atomic.AtomicReference;
 /**
  * Data Access Object for Disk operations.
  */
+@Getter
 public class DiskDAO {
-    
     private final MainOperator operator;
     
     public DiskDAO(MainOperator operator) {
@@ -93,6 +93,8 @@ public class DiskDAO {
      * Format: [{"identifier":"uuid","amount":"123","itemData":"serialized"}]
      */
     private String serializeItems(ConcurrentSkipListSet<StoredItem> items) {
+        operator.ensureUsable();
+
         if (items == null || items.isEmpty()) {
             return "[]";
         }
@@ -126,6 +128,8 @@ public class DiskDAO {
      * Deserialize items from JSON string.
      */
     private ConcurrentSkipListSet<StoredItem> deserializeItems(String json) {
+        operator.ensureUsable();
+
         ConcurrentSkipListSet<StoredItem> items = new ConcurrentSkipListSet<>();
         
         if (json == null || json.isEmpty() || json.trim().equals("[]")) {
@@ -175,6 +179,8 @@ public class DiskDAO {
      * Parse a single JSON object and add it to the items set.
      */
     private void parseItemObject(String objStr, ConcurrentSkipListSet<StoredItem> items) {
+        operator.ensureUsable();
+
         try {
             String identifier = extractJsonValue(objStr, "identifier");
             String amountStr = extractJsonValue(objStr, "amount");
@@ -195,6 +201,8 @@ public class DiskDAO {
      * Extract a JSON value from a JSON object string.
      */
     private String extractJsonValue(String json, String key) {
+        operator.ensureUsable();
+
         try {
             String searchKey = "\"" + key + "\":\"";
             int startIdx = json.indexOf(searchKey);

@@ -12,8 +12,8 @@ import java.util.concurrent.atomic.AtomicReference;
 /**
  * Data Access Object for Filter operations.
  */
+@Getter
 public class FilterDAO {
-    
     private final MainOperator operator;
     
     public FilterDAO(MainOperator operator) {

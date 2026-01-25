@@ -10,6 +10,7 @@ import gg.drak.restored.data.blocks.BlockLocation;
 import gg.drak.restored.data.blocks.BlockType;
 import gg.drak.restored.data.blocks.NetworkBlock;
 import gg.drak.restored.data.blocks.impl.Controller;
+import gg.drak.restored.data.blocks.impl.CraftingViewer;
 import gg.drak.restored.data.blocks.impl.Drive;
 import gg.drak.restored.data.blocks.impl.Viewer;
 import lombok.Getter;
@@ -78,28 +79,55 @@ public class DataBlock implements Identifiable {
     }
 
     public void save() {
+        Restored.getInstance().logInfo("Saving DataBlock with " + data.size() + " keys: " + data.keySet());
         for (String key : data.keySet()) {
-            write(key, data.get(key));
+            Object value = data.get(key);
+            write(key, value);
+            Restored.getInstance().logInfo("Wrote key '" + key + "' = '" + value + "' to section");
         }
     }
 
     public void load() {
-        Restored.getInstance().logInfo("Loading data block...");
+        Restored.getInstance().logInfo("Loading data block for: " + getIdentifier());
 
         FlatFileSection section = getSection();
-
+        
+        // Debug: Check what's in the section before loading
+        Restored.getInstance().logInfo("Section keys before getMapParameterized: " + section.singleLayerKeySet());
+        
+        // Try reading directly from the section instead of using getMapParameterized
+        // getMapParameterized("") might not work correctly for flat keys
+        // Read each key directly from the section
+        for (String key : section.singleLayerKeySet()) {
+            Object value = section.get(key);
+            if (value != null) {
+                data.put(key, value);
+                Restored.getInstance().logInfo("Loaded key '" + key + "' = '" + value + "' from section");
+            }
+        }
+        
+        // Also try getMapParameterized as fallback
         Map<String, Object> map = section.getMapParameterized("");
-        data.putAll(map);
-
-        Restored.getInstance().logInfo("Data block data loaded");
+        if (!map.isEmpty()) {
+            Restored.getInstance().logInfo("Also found " + map.size() + " keys via getMapParameterized: " + map.keySet());
+            data.putAll(map);
+        }
+        
+        Restored.getInstance().logInfo("Data block data loaded. Final data map keys: " + data.keySet());
     }
 
     public void readNetwork() {
         String networkIdentifier = getString("network");
         if (networkIdentifier != null) {
-            Restored.getInstance().logInfo("Network identifier found");
+            Restored.getInstance().logInfo("Network identifier found: " + networkIdentifier);
             network = NetworkManager.getOrGetNetwork(networkIdentifier);
+            if (network.isEmpty()) {
+                Restored.getInstance().logWarning("Failed to load network: " + networkIdentifier);
+            } else {
+                Restored.getInstance().logInfo("Network loaded successfully: " + networkIdentifier);
+            }
         } else {
+            Restored.getInstance().logInfo("Network identifier not found in data map. Data map keys: " + data.keySet());
             network = Optional.empty();
         }
     }
@@ -120,10 +148,17 @@ public class DataBlock implements Identifiable {
     }
 
     public void writeMap() {
-        network.ifPresent(value -> putMap("network", value.getIdentifier()));
+        if (network.isPresent()) {
+            String networkId = network.get().getIdentifier();
+            putMap("network", networkId);
+            Restored.getInstance().logInfo("Writing network identifier to data map: " + networkId);
+        } else {
+            Restored.getInstance().logInfo("No network present, skipping network write");
+        }
 
         if (type != null) {
             putMap("type", type.name());
+            Restored.getInstance().logInfo("Writing type to data map: " + type.name());
         }
     }
 
@@ -175,6 +210,8 @@ public class DataBlock implements Identifiable {
                 return Optional.of(new Drive(network, location, this));
             case VIEWER:
                 return Optional.of(new Viewer(network, location, this));
+            case CRAFTING_VIEWER:
+                return Optional.of(new CraftingViewer(network, location, this));
             default:
                 return Optional.empty();
         }

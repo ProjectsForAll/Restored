@@ -13,8 +13,8 @@ import java.util.concurrent.atomic.AtomicReference;
 /**
  * Data Access Object for Network operations.
  */
+@Getter
 public class NetworkDAO {
-    
     private final MainOperator operator;
     
     public NetworkDAO(MainOperator operator) {

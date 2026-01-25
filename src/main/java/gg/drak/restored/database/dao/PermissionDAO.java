@@ -14,8 +14,8 @@ import java.util.List;
 /**
  * Data Access Object for Permission operations.
  */
+@Getter
 public class PermissionDAO {
-    
     private final MainOperator operator;
     
     public PermissionDAO(MainOperator operator) {
@@ -137,19 +137,6 @@ public class PermissionDAO {
             this.playerUuid = playerUuid;
             this.permissionNode = permissionNode;
             this.value = value;
-        }
-        
-        // Explicit getters to ensure they're available (Lombok should generate these, but adding them explicitly for safety)
-        public String getNetworkId() {
-            return networkId;
-        }
-        
-        public String getPlayerUuid() {
-            return playerUuid;
-        }
-        
-        public PermissionNode getPermissionNode() {
-            return permissionNode;
         }
         
         public boolean getValue() {

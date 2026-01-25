@@ -66,6 +66,7 @@ public class Statements {
         DELETE_NETWORK_BLOCKS_BY_NETWORK("DELETE FROM `%table_prefix%NetworkBlocks` WHERE NetworkId = ?;"),
         
         GET_NETWORK_BLOCKS_BY_NETWORK("SELECT * FROM `%table_prefix%NetworkBlocks` WHERE NetworkId = ?;"),
+        GET_NETWORK_BLOCK("SELECT * FROM `%table_prefix%NetworkBlocks` WHERE Identifier = ?;"),
         
         INSERT_DISK("INSERT INTO `%table_prefix%Disks` (Identifier, Capacity, Items) VALUES (?, ?, ?) " +
                 "ON DUPLICATE KEY UPDATE Capacity = VALUES(Capacity), Items = VALUES(Items);"),
@@ -149,6 +150,7 @@ public class Statements {
         DELETE_NETWORK_BLOCKS_BY_NETWORK("DELETE FROM `%table_prefix%NetworkBlocks` WHERE NetworkId = ?;"),
         
         GET_NETWORK_BLOCKS_BY_NETWORK("SELECT * FROM `%table_prefix%NetworkBlocks` WHERE NetworkId = ?;"),
+        GET_NETWORK_BLOCK("SELECT * FROM `%table_prefix%NetworkBlocks` WHERE Identifier = ?;"),
         
         INSERT_DISK("INSERT OR REPLACE INTO `%table_prefix%Disks` (Identifier, Capacity, Items) VALUES (?, ?, ?);"),
         
@@ -184,6 +186,7 @@ public class Statements {
         DELETE_NETWORK_BLOCK,
         DELETE_NETWORK_BLOCKS_BY_NETWORK,
         GET_NETWORK_BLOCKS_BY_NETWORK,
+        GET_NETWORK_BLOCK,
         INSERT_DISK,
         GET_DISK,
         INSERT_PERMISSION,

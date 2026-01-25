@@ -101,11 +101,14 @@ public class ControllerItem extends RestoredItem implements IPlaceable {
 
     @Override
     public void onNoNetworkPlace(Block atBlock, Player placedBy) {
-        Network network = NetworkMap.createNetwork(atBlock, placedBy);
-
-        network.onSave();
-
+        // Set block type first so DataBlock is created with correct block
         placeAsBlock(atBlock, placedBy);
+        
+        // Create network (this will create the Controller and call onPlaced())
+        Network network = NetworkMap.createNetwork(atBlock, placedBy);
+        
+        // Save network state
+        network.onSave();
     }
 
     @Override

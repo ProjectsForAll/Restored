@@ -10,12 +10,14 @@ import lombok.Setter;
 import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Data Access Object for NetworkBlock operations.
  */
+@Getter
 public class NetworkBlockDAO {
-    
     private final MainOperator operator;
     
     public NetworkBlockDAO(MainOperator operator) {
@@ -84,6 +86,49 @@ public class NetworkBlockDAO {
                 throw new RuntimeException(e);
             }
         });
+    }
+    
+    /**
+     * Get a network block by identifier.
+     * @param identifier Block identifier
+     * @return Optional containing NetworkBlockData if found
+     * @throws SQLException if database operation fails
+     */
+    public Optional<NetworkBlockData> getById(String identifier) throws SQLException {
+        operator.ensureUsable();
+        
+        String statement = Statements.getStatement(Statements.StatementType.GET_NETWORK_BLOCK, operator.getConnectorSet());
+        
+        AtomicReference<Optional<NetworkBlockData>> ref = new AtomicReference<>(Optional.empty());
+        
+        operator.executeQuery(statement, stmt -> {
+            try {
+                stmt.setString(1, identifier);
+            } catch (Exception e) {
+                Restored.getInstance().logSevere("Failed to set values for GET_NETWORK_BLOCK statement", e);
+                throw new RuntimeException(e);
+            }
+        }, rs -> {
+            try {
+                if (rs.next()) {
+                    String blockTypeStr = rs.getString("BlockType");
+                    String networkId = rs.getString("NetworkId");
+                    
+                    BlockType blockType = BlockType.NONE;
+                    try {
+                        blockType = BlockType.valueOf(blockTypeStr);
+                    } catch (IllegalArgumentException e) {
+                        Restored.getInstance().logWarning("Unknown block type: " + blockTypeStr);
+                    }
+                    
+                    ref.set(Optional.of(new NetworkBlockData(identifier, networkId, blockType)));
+                }
+            } catch (Exception e) {
+                Restored.getInstance().logSevere("Failed to read values from GET_NETWORK_BLOCK result set", e);
+            }
+        });
+        
+        return ref.get();
     }
     
     /**
