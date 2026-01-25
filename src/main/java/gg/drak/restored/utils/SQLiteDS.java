@@ -1,5 +1,11 @@
 package gg.drak.restored.utils;
 
+import gg.drak.restored.database.MainOperator;
+import gg.drak.restored.database.dao.DiskDAO;
+import gg.drak.restored.database.dao.FilterDAO;
+import gg.drak.restored.database.dao.NetworkBlockDAO;
+import gg.drak.restored.database.dao.NetworkDAO;
+import gg.drak.restored.database.dao.PermissionDAO;
 import host.plas.bou.sql.ConnectorSet;
 import host.plas.bou.sql.DBOperator;
 import host.plas.bou.sql.DatabaseType;
@@ -7,8 +13,12 @@ import gg.drak.restored.Restored;
 import lombok.Getter;
 import lombok.Setter;
 
-import java.sql.SQLException;
-
+/**
+ * Legacy SQLite database operator.
+ * This class is deprecated - use DatabaseManager instead.
+ * @deprecated Use DatabaseManager instead
+ */
+@Deprecated
 @Getter @Setter
 public class SQLiteDS extends DBOperator {
     private NetworkDAO networkDAO;
@@ -29,31 +39,26 @@ public class SQLiteDS extends DBOperator {
                 "restored.db"
                 ), Restored.getInstance());
         
-        this.networkDAO = new NetworkDAO(this);
-        this.networkBlockDAO = new NetworkBlockDAO(this);
-        this.diskDAO = new DiskDAO(this);
-        this.permissionDAO = new PermissionDAO(this);
-        this.filterDAO = new FilterDAO(this);
+        // Create a MainOperator for the DAOs to use
+        MainOperator operator = new MainOperator();
+        this.networkDAO = new NetworkDAO(operator);
+        this.networkBlockDAO = new NetworkBlockDAO(operator);
+        this.diskDAO = new DiskDAO(operator);
+        this.permissionDAO = new PermissionDAO(operator);
+        this.filterDAO = new FilterDAO(operator);
     }
 
     @Override
     public void ensureTables() {
-        try {
-            networkDAO.createTable();
-            networkBlockDAO.createTable();
-            diskDAO.createTable();
-            permissionDAO.createTable();
-            filterDAO.createTable();
-            
-            Restored.getInstance().logInfo("Database tables ensured successfully!");
-        } catch (SQLException e) {
-            Restored.getInstance().logSevere("Failed to ensure database tables: " + e.getMessage(), e);
-        }
+        // Tables are now ensured by MainOperator.ensureDatabase()
+        // This method is kept for compatibility but does nothing
+        Restored.getInstance().logWarning("SQLiteDS.ensureTables() is deprecated. Use DatabaseManager instead.");
     }
 
     @Override
     public void ensureDatabase() {
-        // SQLite creates the database file automatically, so we just ensure tables
-        ensureTables();
+        // Database is now ensured by MainOperator.ensureDatabase()
+        // This method is kept for compatibility but does nothing
+        Restored.getInstance().logWarning("SQLiteDS.ensureDatabase() is deprecated. Use DatabaseManager instead.");
     }
 }

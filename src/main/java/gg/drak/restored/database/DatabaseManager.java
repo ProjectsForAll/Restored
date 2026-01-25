@@ -14,7 +14,6 @@ import lombok.Getter;
  */
 public class DatabaseManager {
     
-    @Getter
     private static DatabaseManager instance;
     
     @Getter
