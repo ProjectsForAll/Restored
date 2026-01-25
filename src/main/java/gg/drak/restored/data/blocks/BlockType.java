@@ -3,6 +3,7 @@ package gg.drak.restored.data.blocks;
 import host.plas.bou.gui.GuiType;
 import gg.drak.restored.data.Network;
 import gg.drak.restored.data.blocks.impl.Controller;
+import gg.drak.restored.data.blocks.impl.CraftingViewer;
 import gg.drak.restored.data.blocks.impl.Drive;
 import gg.drak.restored.data.blocks.impl.Viewer;
 import lombok.Getter;
@@ -13,6 +14,7 @@ public enum BlockType implements GuiType {
     CONTROLLER(9, "Controller"),
     DRIVE(9, "Drive"),
     VIEWER(54, "Viewer"),
+    CRAFTING_VIEWER(54, "Crafting Viewer"),
 
     NONE,
     ;
@@ -37,6 +39,8 @@ public enum BlockType implements GuiType {
                 return new Drive(network, location);
             case VIEWER:
                 return new Viewer(network, location);
+            case CRAFTING_VIEWER:
+                return new CraftingViewer(network, location);
             default:
                 return null;
         }

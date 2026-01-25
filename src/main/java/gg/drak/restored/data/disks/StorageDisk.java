@@ -5,7 +5,6 @@ import host.plas.bou.utils.ColorUtils;
 import gg.drak.restored.Restored;
 import gg.drak.restored.data.blocks.impl.Drive;
 import gg.drak.restored.data.screens.items.StoredItem;
-import gg.drak.restored.data.storage.DiskSerializable;
 import lombok.Getter;
 import lombok.Setter;
 import org.bukkit.Material;
@@ -16,6 +15,7 @@ import org.bukkit.persistence.PersistentDataContainer;
 import org.bukkit.persistence.PersistentDataType;
 
 import java.math.BigInteger;
+import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -30,8 +30,6 @@ public class StorageDisk implements Identifiable {
     private ConcurrentSkipListSet<StoredItem> contents; // Map of ItemStacks to their quantity
     private Drive drive;
 
-    private DiskSerializable storage;
-
     public UUID getUuid() {
         return UUID.fromString(identifier);
     }
@@ -40,18 +38,37 @@ public class StorageDisk implements Identifiable {
         this.drive = drive;
         this.identifier = identifier;
 
-        this.storage = new DiskSerializable(this);
-
         buildOrGetSettings();
     }
 
     public void buildOrGetSettings() {
-        this.capacity = getStorage().getCapacity();
-        this.contents = getStorage().getItems();
+        try {
+            Optional<DiskDAO.DiskData> dataOpt = DatabaseManager.getInstance().getDiskDAO().getById(identifier);
+            
+            if (dataOpt.isPresent()) {
+                DiskDAO.DiskData data = dataOpt.get();
+                this.capacity = data.getCapacity();
+                this.contents = data.getItems();
+            } else {
+                // Try to get capacity from disk item if it exists
+                // Default capacity if not found
+                this.capacity = BigInteger.valueOf(1024);
+                this.contents = new ConcurrentSkipListSet<>();
+                save();
+            }
+        } catch (SQLException e) {
+            Restored.getInstance().logSevere("Failed to load disk: " + identifier, e);
+            this.capacity = BigInteger.valueOf(1024);
+            this.contents = new ConcurrentSkipListSet<>();
+        }
     }
 
     public void save() {
-        getStorage().onSave();
+        try {
+            DatabaseManager.getInstance().getDiskDAO().insert(identifier, capacity, contents);
+        } catch (SQLException e) {
+            Restored.getInstance().logSevere("Failed to save disk: " + identifier, e);
+        }
     }
 
     public StoredItem get(String uuid) {

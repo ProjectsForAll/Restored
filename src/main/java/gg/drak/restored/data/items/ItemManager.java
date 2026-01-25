@@ -2,7 +2,7 @@ package gg.drak.restored.data.items;
 
 import gg.drak.restored.Restored;
 import gg.drak.restored.data.items.impl.*;
-import host.plas.restored.data.items.impl.*;
+import gg.drak.restored.data.items.impl.*;
 import lombok.Getter;
 import lombok.Setter;
 import org.bukkit.NamespacedKey;
@@ -57,6 +57,8 @@ public class ItemManager {
                 return new DriveItem();
             case VIEWER:
                 return new ViewerItem();
+            case CRAFTING_VIEWER:
+                return new CraftingViewerItem();
             case GENERIC_DISK:
                 return new GenericDiskItem(ItemType.GENERIC_DISK, readCapacity(stack).get(), readDiskIdentifier(stack).get());
             case FOUR_K_DISK:
@@ -107,6 +109,8 @@ public class ItemManager {
                     return Optional.of(new DriveItem());
                 case VIEWER:
                     return Optional.of(new ViewerItem());
+                case CRAFTING_VIEWER:
+                    return Optional.of(new CraftingViewerItem());
                 case GENERIC_DISK:
                     if (args.length == 2) {
                         return Optional.of(new GenericDiskItem(ItemType.GENERIC_DISK, new BigInteger(args[0]), args[1]));

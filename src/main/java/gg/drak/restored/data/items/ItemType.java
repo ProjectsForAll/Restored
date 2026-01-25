@@ -1,7 +1,7 @@
 package gg.drak.restored.data.items;
 
 import gg.drak.restored.data.blocks.BlockType;
-import host.plas.restored.data.items.impl.*;
+import gg.drak.restored.data.items.impl.*;
 import lombok.Getter;
 
 import java.util.Optional;
@@ -16,6 +16,7 @@ public enum ItemType {
     CONTROLLER(BlockType.CONTROLLER),
     DRIVE(BlockType.DRIVE),
     VIEWER(BlockType.VIEWER),
+    CRAFTING_VIEWER(BlockType.CRAFTING_VIEWER),
 
     // None
     NONE,

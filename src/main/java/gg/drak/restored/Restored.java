@@ -1,5 +1,7 @@
 package gg.drak.restored;
 
+import gg.drak.restored.config.DatabaseConfig;
+import gg.drak.restored.database.DatabaseManager;
 import host.plas.bou.BetterPlugin;
 import gg.drak.restored.commands.GetItemCMD;
 import gg.drak.restored.commands.NetworkPermissionsCMD;
@@ -38,6 +40,11 @@ public final class Restored extends BetterPlugin {
     @Getter @Setter
     private static NetworkSaveTimer networkSaveTimer;
 
+    @Getter @Setter
+    private static DatabaseConfig databaseConfig;
+    @Getter @Setter
+    private static DatabaseManager database;
+
     public Restored() {
         super();
     }
@@ -50,6 +57,11 @@ public final class Restored extends BetterPlugin {
         setMainConfig(new MainConfig());
         setBlockMap(new BlockMap());
         setNetworkMapConfig(new NetworkMapConfig());
+        setDatabaseConfig(new DatabaseConfig());
+        
+        // Initialize database manager (this will create tables)
+        DatabaseManager.initialize();
+        setDatabase(DatabaseManager.getInstance());
 
         setMainListener(new MainListener());
 

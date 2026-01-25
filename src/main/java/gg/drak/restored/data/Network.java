@@ -1,22 +1,22 @@
 package gg.drak.restored.data;
 
-import gg.drak.thebase.storage.resources.flat.simple.SimpleConfiguration;
 import gg.drak.restored.Restored;
 import gg.drak.restored.data.blocks.NetworkMap;
 import gg.drak.restored.data.blocks.SingleNetworkMap;
 import gg.drak.restored.data.blocks.datablock.DataBlock;
 import gg.drak.restored.data.blocks.impl.Controller;
+import gg.drak.restored.data.blocks.impl.CraftingViewer;
 import gg.drak.restored.data.blocks.impl.Drive;
 import gg.drak.restored.data.blocks.impl.Viewer;
 import gg.drak.restored.data.blocks.NetworkBlock;
 import gg.drak.restored.data.disks.StorageDisk;
+import gg.drak.restored.data.items.impl.CraftingViewerItem;
 import gg.drak.restored.data.items.impl.DriveItem;
 import gg.drak.restored.data.items.impl.ViewerItem;
 import gg.drak.restored.data.permission.PermissionNode;
 import gg.drak.restored.data.permission.PermissionSystem;
 import gg.drak.restored.data.screens.items.StoredItem;
 import gg.drak.restored.data.screens.items.ViewerPage;
-import gg.drak.restored.utils.IOUtils;
 import lombok.Getter;
 import lombok.Setter;
 import org.bukkit.Bukkit;
@@ -29,12 +29,13 @@ import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.inventory.ItemStack;
 
 import java.math.BigInteger;
+import java.sql.SQLException;
 import java.util.*;
 import java.util.concurrent.ConcurrentSkipListSet;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 @Getter @Setter
-public class Network extends SimpleConfiguration {
+public class Network {
     private String identifier; // in UUID format
     private String ownerUuid; // Owner of the network
     private Controller controller; // Location of the start of the network
@@ -53,22 +54,19 @@ public class Network extends SimpleConfiguration {
         return Bukkit.getOfflinePlayer(uuid);
     }
 
-    public String getFileName() {
-        return getFileName(identifier);
-    }
-
-    public static String getFileName(String identifier) {
-        return identifier + ".yml";
-    }
-
     public Network(String identifier, String ownerUuid) {
-        super(getFileName(identifier), IOUtils.getNetworkFolder(), false);
-
         this.identifier = identifier;
         this.ownerUuid = ownerUuid;
         this.permissionSystem = new PermissionSystem(this);
 
         this.cachedBlocks = new ConcurrentSkipListSet<>();
+        
+        // Save to database
+        try {
+            DatabaseManager.getInstance().getNetworkDAO().insert(identifier, ownerUuid);
+        } catch (SQLException e) {
+            Restored.getInstance().logSevere("Failed to save network to database: " + identifier, e);
+        }
     }
 
     public Network(String identifier, Block controller, Player owner) {
@@ -83,9 +81,23 @@ public class Network extends SimpleConfiguration {
         this(NetworkMap.generateUUID(), controller, owner);
     }
 
-    @Override
     public void init() {
-
+        // Load permission system from database
+        try {
+            List<gg.drak.restored.database.PermissionDAO.PermissionData> permissions = 
+                    DatabaseManager.getInstance().getPermissionDAO().getByNetworkId(identifier);
+            
+            for (gg.drak.restored.database.PermissionDAO.PermissionData perm : permissions) {
+                if (perm.getValue()) {
+                    permissionSystem.trust(
+                            perm.getPermissionNode(),
+                            perm.getPlayerUuid()
+                    );
+                }
+            }
+        } catch (SQLException e) {
+            Restored.getInstance().logSevere("Failed to load permissions for network: " + identifier, e);
+        }
     }
 
     public ConcurrentSkipListSet<NetworkBlock> getConnectedBlocks() {
@@ -340,8 +352,24 @@ public class Network extends SimpleConfiguration {
         // Save the network map
         getNetworkMap().save();
         
-        // Save permission system
-        // PermissionSystem saves are handled through the network configuration
+        // Save permission system to database
+        try {
+            // Clear existing permissions
+            DatabaseManager.getInstance().getPermissionDAO().removeAllPermissions(identifier);
+            
+            // Save current permissions
+            permissionSystem.getTrusted().forEach((node, uuids) -> {
+                for (String uuid : uuids) {
+                    try {
+                        DatabaseManager.getInstance().getPermissionDAO().setPermission(identifier, uuid, node, true);
+                    } catch (SQLException e) {
+                        Restored.getInstance().logSevere("Failed to save permission for network: " + identifier, e);
+                    }
+                }
+            });
+        } catch (SQLException e) {
+            Restored.getInstance().logSevere("Failed to save permissions for network: " + identifier, e);
+        }
     }
 
     public boolean hasPermission(Player player, PermissionNode permission) {
@@ -357,6 +385,12 @@ public class Network extends SimpleConfiguration {
     public void onBlockPlace(Block block, ViewerItem item) {
         Viewer viewer = new Viewer(this, block.getLocation());
         viewer.onPlaced();
+        updateCache();
+    }
+
+    public void onBlockPlace(Block block, CraftingViewerItem item) {
+        CraftingViewer craftingViewer = new CraftingViewer(this, block.getLocation());
+        craftingViewer.onPlaced();
         updateCache();
     }
 
@@ -406,6 +440,15 @@ public class Network extends SimpleConfiguration {
         
         // Delete the network map
         getNetworkMap().delete();
+        
+        // Delete from database
+        try {
+            DatabaseManager.getInstance().getNetworkDAO().delete(identifier);
+            DatabaseManager.getInstance().getNetworkBlockDAO().deleteByNetworkId(identifier);
+            DatabaseManager.getInstance().getPermissionDAO().removeAllPermissions(identifier);
+        } catch (SQLException e) {
+            Restored.getInstance().logSevere("Failed to delete network from database: " + identifier, e);
+        }
         
         // Unload from manager
         NetworkManager.unloadNetwork(this);

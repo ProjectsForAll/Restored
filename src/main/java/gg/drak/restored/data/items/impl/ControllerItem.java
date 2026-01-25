@@ -12,8 +12,11 @@ import lombok.Getter;
 import lombok.Setter;
 import org.bukkit.Material;
 import org.bukkit.block.Block;
+import org.bukkit.block.BlockFace;
 import org.bukkit.entity.Player;
 import org.bukkit.event.block.BlockPlaceEvent;
+
+import java.util.Optional;
 
 @Getter @Setter
 public class ControllerItem extends RestoredItem implements IPlaceable {
@@ -42,19 +45,49 @@ public class ControllerItem extends RestoredItem implements IPlaceable {
 
         Restored.getInstance().logInfo("Handling block placement for " + getClass().getSimpleName() + "...");
 
-        NetworkManager.getAdjacentNetwork(placedBlock).ifPresentOrElse(network -> {
-            Restored.getInstance().logInfo("Found network for block placement for " + getClass().getSimpleName() + "...");
+        // Check if placing this controller would create a network with 2+ controllers
+        Optional<Network> adjacentNetwork = NetworkManager.getAdjacentNetwork(placedBlock);
+        if (adjacentNetwork.isPresent()) {
+            Network network = adjacentNetwork.get();
+            
+            // Check if this network already has a controller
+            if (network.getController() != null) {
+                event.setCancelled(true);
+                Sender sender = new Sender(player);
+                sender.sendMessage("&cYou cannot place a controller block near a network that already has a controller!");
+                return;
+            }
+        }
 
-            event.setCancelled(true);
-            Sender sender = new Sender(player);
-            sender.sendMessage("&cYou cannot place a controller block near an existing network!");
-        }, () -> {
-            Restored.getInstance().logInfo("No network found for block placement for " + getClass().getSimpleName() + "...");
+        // Check all orthogonally connected blocks for controllers
+        BlockFace[] faces = new BlockFace[] {
+                BlockFace.NORTH,
+                BlockFace.EAST,
+                BlockFace.SOUTH,
+                BlockFace.WEST,
+                BlockFace.UP,
+                BlockFace.DOWN
+        };
 
-            onNoNetworkPlace(placedBlock, player);
+        for (BlockFace face : faces) {
+            Block relative = placedBlock.getRelative(face);
+            Optional<Network> relativeNetwork = NetworkManager.getNetworkAt(relative);
+            
+            if (relativeNetwork.isPresent()) {
+                Network network = relativeNetwork.get();
+                
+                // Check if this connected network has a controller
+                if (network.getController() != null) {
+                    event.setCancelled(true);
+                    Sender sender = new Sender(player);
+                    sender.sendMessage("&cYou cannot place a controller block that would connect to a network with an existing controller!");
+                    return;
+                }
+            }
+        }
 
-//            event.setCancelled(true);
-        });
+        // No adjacent networks with controllers, proceed with placement
+        onNoNetworkPlace(placedBlock, player);
     }
 
     @Override

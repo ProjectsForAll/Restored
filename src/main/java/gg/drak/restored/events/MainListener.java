@@ -5,6 +5,7 @@ import host.plas.bou.gui.screens.ScreenInstance;
 import gg.drak.restored.Restored;
 import gg.drak.restored.data.NetworkManager;
 import gg.drak.restored.data.blocks.NetworkBlock;
+import gg.drak.restored.data.blocks.impl.CraftingViewer;
 import gg.drak.restored.data.blocks.impl.Drive;
 import gg.drak.restored.data.blocks.impl.Viewer;
 import gg.drak.restored.data.blocks.inventory.InventoryBlock;
@@ -121,6 +122,10 @@ public class MainListener implements Listener {
                             invBlock = (Viewer) networkBlock;
 
                             Restored.getInstance().logInfo("Block is a viewer!");
+                        } else if (networkBlock instanceof CraftingViewer) {
+                            invBlock = (CraftingViewer) networkBlock;
+
+                            Restored.getInstance().logInfo("Block is a crafting viewer!");
                         } else if (networkBlock instanceof InventoryBlock) {
                             invBlock = (InventoryBlock) networkBlock;
                         }
