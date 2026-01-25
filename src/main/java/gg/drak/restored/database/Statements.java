@@ -18,22 +18,25 @@ public class Statements {
                 "Identifier VARCHAR(36) NOT NULL, " +
                 "OwnerUuid VARCHAR(36) NOT NULL, " +
                 "PRIMARY KEY (Identifier) " +
-                ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci; " +
+                ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;; " +
                 
                 "CREATE TABLE IF NOT EXISTS `%table_prefix%NetworkBlocks` ( " +
                 "Identifier VARCHAR(255) NOT NULL, " +
                 "NetworkId VARCHAR(36) NOT NULL, " +
                 "BlockType VARCHAR(50) NOT NULL, " +
+                "Data TEXT, " +
                 "PRIMARY KEY (Identifier), " +
                 "FOREIGN KEY (NetworkId) REFERENCES `%table_prefix%Networks`(Identifier) ON DELETE CASCADE " +
-                ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci; " +
+                ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;; " +
                 
                 "CREATE TABLE IF NOT EXISTS `%table_prefix%Disks` ( " +
                 "Identifier VARCHAR(36) NOT NULL, " +
+                "DriveId VARCHAR(255) DEFAULT NULL, " +
+                "Slot INTEGER, " +
                 "Capacity TEXT NOT NULL, " +
                 "Items TEXT, " +
                 "PRIMARY KEY (Identifier) " +
-                ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci; " +
+                ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;; " +
                 
                 "CREATE TABLE IF NOT EXISTS `%table_prefix%Permissions` ( " +
                 "NetworkId VARCHAR(36) NOT NULL, " +
@@ -42,13 +45,13 @@ public class Statements {
                 "Value BOOLEAN NOT NULL DEFAULT TRUE, " +
                 "PRIMARY KEY (NetworkId, PlayerUuid, PermissionNode), " +
                 "FOREIGN KEY (NetworkId) REFERENCES `%table_prefix%Networks`(Identifier) ON DELETE CASCADE " +
-                ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci; " +
+                ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;; " +
                 
                 "CREATE TABLE IF NOT EXISTS `%table_prefix%Filters` ( " +
                 "PlayerUuid VARCHAR(36) NOT NULL, " +
                 "Filter TEXT, " +
                 "PRIMARY KEY (PlayerUuid) " +
-                ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;"
+                ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;; "
         ),
         
         INSERT_NETWORK("INSERT INTO `%table_prefix%Networks` (Identifier, OwnerUuid) VALUES (?, ?) " +
@@ -58,8 +61,8 @@ public class Statements {
         
         GET_NETWORK("SELECT * FROM `%table_prefix%Networks` WHERE Identifier = ?;"),
         
-        INSERT_NETWORK_BLOCK("INSERT INTO `%table_prefix%NetworkBlocks` (Identifier, NetworkId, BlockType) VALUES (?, ?, ?) " +
-                "ON DUPLICATE KEY UPDATE NetworkId = VALUES(NetworkId), BlockType = VALUES(BlockType);"),
+        INSERT_NETWORK_BLOCK("INSERT INTO `%table_prefix%NetworkBlocks` (Identifier, NetworkId, BlockType, Data) VALUES (?, ?, ?, ?) " +
+                "ON DUPLICATE KEY UPDATE NetworkId = VALUES(NetworkId), BlockType = VALUES(BlockType), Data = VALUES(Data);"),
         
         DELETE_NETWORK_BLOCK("DELETE FROM `%table_prefix%NetworkBlocks` WHERE Identifier = ?;"),
         
@@ -68,10 +71,11 @@ public class Statements {
         GET_NETWORK_BLOCKS_BY_NETWORK("SELECT * FROM `%table_prefix%NetworkBlocks` WHERE NetworkId = ?;"),
         GET_NETWORK_BLOCK("SELECT * FROM `%table_prefix%NetworkBlocks` WHERE Identifier = ?;"),
         
-        INSERT_DISK("INSERT INTO `%table_prefix%Disks` (Identifier, Capacity, Items) VALUES (?, ?, ?) " +
-                "ON DUPLICATE KEY UPDATE Capacity = VALUES(Capacity), Items = VALUES(Items);"),
+        INSERT_DISK("INSERT INTO `%table_prefix%Disks` (Identifier, DriveId, Slot, Capacity, Items) VALUES (?, ?, ?, ?, ?) " +
+                "ON DUPLICATE KEY UPDATE DriveId = VALUES(DriveId), Slot = VALUES(Slot), Capacity = VALUES(Capacity), Items = VALUES(Items);"),
         
         GET_DISK("SELECT * FROM `%table_prefix%Disks` WHERE Identifier = ?;"),
+        GET_DISKS_BY_DRIVE("SELECT * FROM `%table_prefix%Disks` WHERE DriveId = ?;"),
         
         INSERT_PERMISSION("INSERT INTO `%table_prefix%Permissions` (NetworkId, PlayerUuid, PermissionNode, Value) VALUES (?, ?, ?, ?) " +
                 "ON DUPLICATE KEY UPDATE Value = VALUES(Value);"),
@@ -86,6 +90,7 @@ public class Statements {
         GET_FILTER("SELECT * FROM `%table_prefix%Filters` WHERE PlayerUuid = ?;"),
         
         CLEAR_FILTER("DELETE FROM `%table_prefix%Filters` WHERE PlayerUuid = ?;"),
+        GET_ALL_NETWORKS("SELECT * FROM `%table_prefix%Networks`;"),
         ;
 
         private final String statement;
@@ -104,22 +109,25 @@ public class Statements {
                 "Identifier TEXT NOT NULL, " +
                 "OwnerUuid TEXT NOT NULL, " +
                 "PRIMARY KEY (Identifier) " +
-                "); " +
+                ");; " +
                 
                 "CREATE TABLE IF NOT EXISTS `%table_prefix%NetworkBlocks` ( " +
                 "Identifier TEXT NOT NULL, " +
                 "NetworkId TEXT NOT NULL, " +
                 "BlockType TEXT NOT NULL, " +
+                "Data TEXT, " +
                 "PRIMARY KEY (Identifier), " +
                 "FOREIGN KEY (NetworkId) REFERENCES `%table_prefix%Networks`(Identifier) ON DELETE CASCADE " +
-                "); " +
+                ");; " +
                 
                 "CREATE TABLE IF NOT EXISTS `%table_prefix%Disks` ( " +
                 "Identifier TEXT NOT NULL, " +
+                "DriveId TEXT DEFAULT NULL, " +
+                "Slot INTEGER, " +
                 "Capacity TEXT NOT NULL, " +
                 "Items TEXT, " +
                 "PRIMARY KEY (Identifier) " +
-                "); " +
+                ");; " +
                 
                 "CREATE TABLE IF NOT EXISTS `%table_prefix%Permissions` ( " +
                 "NetworkId TEXT NOT NULL, " +
@@ -128,13 +136,13 @@ public class Statements {
                 "Value INTEGER NOT NULL DEFAULT 1, " +
                 "PRIMARY KEY (NetworkId, PlayerUuid, PermissionNode), " +
                 "FOREIGN KEY (NetworkId) REFERENCES `%table_prefix%Networks`(Identifier) ON DELETE CASCADE " +
-                "); " +
+                ");; " +
                 
                 "CREATE TABLE IF NOT EXISTS `%table_prefix%Filters` ( " +
                 "PlayerUuid TEXT NOT NULL, " +
                 "Filter TEXT, " +
                 "PRIMARY KEY (PlayerUuid) " +
-                ");"
+                ");; "
         ),
         
         INSERT_NETWORK("INSERT OR REPLACE INTO `%table_prefix%Networks` (Identifier, OwnerUuid) VALUES (?, ?);"),
@@ -152,9 +160,10 @@ public class Statements {
         GET_NETWORK_BLOCKS_BY_NETWORK("SELECT * FROM `%table_prefix%NetworkBlocks` WHERE NetworkId = ?;"),
         GET_NETWORK_BLOCK("SELECT * FROM `%table_prefix%NetworkBlocks` WHERE Identifier = ?;"),
         
-        INSERT_DISK("INSERT OR REPLACE INTO `%table_prefix%Disks` (Identifier, Capacity, Items) VALUES (?, ?, ?);"),
+        INSERT_DISK("INSERT OR REPLACE INTO `%table_prefix%Disks` (Identifier, DriveId, Slot, Capacity, Items) VALUES (?, ?, ?, ?, ?);"),
         
         GET_DISK("SELECT * FROM `%table_prefix%Disks` WHERE Identifier = ?;"),
+        GET_DISKS_BY_DRIVE("SELECT * FROM `%table_prefix%Disks` WHERE DriveId = ?;"),
         
         INSERT_PERMISSION("INSERT OR REPLACE INTO `%table_prefix%Permissions` (NetworkId, PlayerUuid, PermissionNode, Value) VALUES (?, ?, ?, ?);"),
         
@@ -167,6 +176,7 @@ public class Statements {
         GET_FILTER("SELECT * FROM `%table_prefix%Filters` WHERE PlayerUuid = ?;"),
         
         CLEAR_FILTER("DELETE FROM `%table_prefix%Filters` WHERE PlayerUuid = ?;"),
+        GET_ALL_NETWORKS("SELECT * FROM `%table_prefix%Networks`;"),
         ;
 
         private final String statement;
@@ -189,12 +199,14 @@ public class Statements {
         GET_NETWORK_BLOCK,
         INSERT_DISK,
         GET_DISK,
+        GET_DISKS_BY_DRIVE,
         INSERT_PERMISSION,
         DELETE_PERMISSIONS_BY_NETWORK,
         GET_PERMISSIONS_BY_NETWORK,
         SET_FILTER,
         GET_FILTER,
         CLEAR_FILTER,
+        GET_ALL_NETWORKS,
         ;
     }
 

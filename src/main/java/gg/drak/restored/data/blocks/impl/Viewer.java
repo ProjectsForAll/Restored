@@ -12,7 +12,6 @@ import gg.drak.restored.Restored;
 import gg.drak.restored.data.Network;
 import gg.drak.restored.data.blocks.BlockType;
 import gg.drak.restored.data.blocks.NetworkBlock;
-import gg.drak.restored.data.blocks.datablock.DataBlock;
 import gg.drak.restored.data.blocks.inventory.InventoryBlock;
 import gg.drak.restored.data.items.impl.ViewerItem;
 import gg.drak.restored.data.screens.items.ViewerPage;
@@ -38,8 +37,8 @@ public class Viewer extends NetworkBlock implements InventoryBlock {
         super(BlockType.VIEWER, network, location, ViewerItem::new);
     }
 
-    public Viewer(Network network, Location location, DataBlock block) {
-        super(BlockType.VIEWER, network, location, ViewerItem::new, block);
+    public Viewer(java.util.UUID uuid, Network network, Location location, com.google.gson.JsonObject data) {
+        super(BlockType.VIEWER, uuid, network, location, ViewerItem::new, data);
     }
 
     @Override
@@ -48,7 +47,7 @@ public class Viewer extends NetworkBlock implements InventoryBlock {
     }
 
     @Override
-    public void onSave() {
+    public void onSaveSpecific() {
 
     }
 
@@ -58,23 +57,26 @@ public class Viewer extends NetworkBlock implements InventoryBlock {
             return stack;
         }
 
-        ItemStack r;
-        if (stack.getAmount() > 1) {
-            r = stack.clone();
-            r.setAmount(stack.getAmount() - 1);
-        } else {
-            r = null;
-        }
-
         if (! canAddItem(stack)) {
             return stack;
         }
 
-        addItem(stack);
+        ItemStack toAdd = stack.clone();
+        toAdd.setAmount(1);
+        
+        if (addItem(toAdd)) {
+            redraw();
 
-        redraw();
+            ItemStack r = stack.clone();
+            r.setAmount(stack.getAmount() - 1);
+            if (r.getAmount() <= 0) {
+                r = null;
+            }
 
-        return r;
+            return r;
+        }
+
+        return stack;
     }
 
     public boolean canAddItem(ItemStack stack) {

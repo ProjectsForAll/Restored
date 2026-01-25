@@ -24,7 +24,8 @@ public class GenericDiskItem extends RestoredItem {
         super(type,
                 Material.PAPER,
                 getSizedName(size),
-                "&7Size&8: &a" + size + " &7Item Disk"
+                "&7Size&8: &a" + size + " &7Item Disk",
+                "&7UUID&8: &b" + identifier
         );
 
         this.size = size;

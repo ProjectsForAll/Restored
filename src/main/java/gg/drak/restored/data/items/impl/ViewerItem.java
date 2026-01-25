@@ -35,10 +35,10 @@ public class ViewerItem extends RestoredItem implements IPlaceable {
 
     @Override
     public void onNoNetworkPlace(Block atBlock, Player placedBy) {
+        placeAsBlock(atBlock, placedBy);
+
         Viewer viewer = new Viewer(null, atBlock.getLocation());
         viewer.onPlaced();
-
-        placeAsBlock(atBlock, placedBy);
     }
 
     @Override

@@ -3,7 +3,6 @@ package gg.drak.restored.data.blocks;
 import gg.drak.thebase.objects.Identifiable;
 import gg.drak.restored.data.Network;
 import gg.drak.restored.data.NetworkManager;
-import gg.drak.restored.data.blocks.datablock.DataBlock;
 import gg.drak.restored.data.blocks.impl.Controller;
 import lombok.Getter;
 import lombok.Setter;
@@ -35,13 +34,9 @@ public class SingleNetworkMap implements Identifiable {
     }
 
     public void removeLocatedBlock(String identifier) {
-        locatedBlocks.forEach((location, locatedBlock) -> {
-            if (locatedBlock.getIdentifier().equals(identifier)) {
-                locatedBlocks.remove(location);
-            }
-        });
+        locatedBlocks.entrySet().removeIf(entry -> entry.getValue().getIdentifier().equals(identifier));
 
-        confirmRemove(identifier);
+        NetworkMap.removeLocatedBlock(identifier);
     }
 
     public boolean hasLocatedBlock(String identifier) {
@@ -90,20 +85,11 @@ public class SingleNetworkMap implements Identifiable {
     }
 
     public Optional<Controller> getControllerImpl(Optional<Network> optionalNetwork) {
-        AtomicReference<Controller> found = new AtomicReference<>(null);
-
         if (optionalNetwork.isEmpty()) return Optional.empty();
 
-        getController()
-                .flatMap(locatedBlock -> NetworkManager.getDataBlockAt(locatedBlock.getLocation().toBlock(), optionalNetwork.get()))
-                .flatMap(DataBlock::getNetworkBlock)
-                .ifPresent(networkBlock -> {
-                    if (networkBlock instanceof Controller) {
-                        found.set((Controller) networkBlock);
-                    }
-                });
-
-        return Optional.ofNullable(found.get());
+        return getController().flatMap(locatedBlock -> {
+            return NetworkManager.createNetworkBlock(optionalNetwork.get(), locatedBlock).filter(Controller.class::isInstance).map(Controller.class::cast);
+        });
     }
 
     public void unload() {

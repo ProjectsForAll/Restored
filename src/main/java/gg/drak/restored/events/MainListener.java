@@ -62,38 +62,44 @@ public class MainListener implements Listener {
         Player player = (Player) viewer;
 
         if (! ScreenManager.hasScreen(player)) {
-            Restored.getInstance().logInfo("Player does not have a screen!");
             return;
         }
         ScreenInstance screen = ScreenManager.getScreen(player).get(); // not null
 
         InventoryAction action = event.getAction();
-        if (action == InventoryAction.PLACE_ONE || action == InventoryAction.PLACE_SOME || action == InventoryAction.PLACE_ALL) {
+        
+        // Handle placing items into the network inventory
+        if (action == InventoryAction.PLACE_ONE || action == InventoryAction.PLACE_SOME || action == InventoryAction.PLACE_ALL || action == InventoryAction.SWAP_WITH_CURSOR) {
             Inventory inventory = event.getClickedInventory();
             if (inventory == null) return;
-            if (screen.getInventory() != inventory) return;
-
-            handlePutItem(event, PutType.PLACE_ONE);
+            
+            // If clicking in the top inventory (the network screen)
+            if (screen.getInventory().equals(inventory)) {
+                handlePutItem(event, PutType.PLACE_ONE);
+                event.setCancelled(true);
+                return;
+            }
         }
+        
+        // Handle shift-clicking from player inventory into network inventory
         ClickType type = event.getClick();
-        if (action == InventoryAction.PICKUP_ONE || action == InventoryAction.PICKUP_SOME || action == InventoryAction.PICKUP_HALF ||
-                action == InventoryAction.PICKUP_ALL || action == InventoryAction.MOVE_TO_OTHER_INVENTORY || action == InventoryAction.HOTBAR_SWAP ||
-                action == InventoryAction.SWAP_WITH_CURSOR) {
-            if (type == ClickType.SHIFT_LEFT || type == ClickType.SHIFT_RIGHT) {
-                Inventory inventory = event.getClickedInventory();
-                if (inventory == null) return;
-                if (screen.getInventory() == inventory) {
-
-                } else {
-                    handlePutItem(event, PutType.SHIFT_CLICK_FROM_OWN);
-                }
+        if (type == ClickType.SHIFT_LEFT || type == ClickType.SHIFT_RIGHT) {
+            Inventory inventory = event.getClickedInventory();
+            if (inventory == null) return;
+            
+            // If clicking in the bottom inventory (player inventory) and top is a network screen
+            if (! screen.getInventory().equals(inventory)) {
+                handlePutItem(event, PutType.SHIFT_CLICK_FROM_OWN);
+                event.setCancelled(true);
+                return;
+            } else {
+                // If shift-clicking from the network screen, we should allow it (it will be handled by the library/Icons)
+                return;
             }
         }
     }
 
     public static void handlePutItem(InventoryClickEvent event, PutType type) {
-        Restored.getInstance().logInfo("Handling put item event...");
-
         ConcurrentSkipListMap<Integer, Player> viewers = new ConcurrentSkipListMap<>();
         event.getViewers().forEach(viewer -> {
             if (! (viewer instanceof Player)) return;
@@ -105,10 +111,7 @@ public class MainListener implements Listener {
             try {
                 ScreenManager.getScreen(player).flatMap(ScreenInstance::getScreenBlock).ifPresent(block -> {
                     try {
-                        Restored.getInstance().logInfo("Block is a screen block!");
-
                         if (! (block instanceof NetworkBlock)) {
-                            Restored.getInstance().logInfo("Block is not a network block!");
                             return;
                         }
 
@@ -116,44 +119,46 @@ public class MainListener implements Listener {
                         InventoryBlock invBlock = null;
                         if (networkBlock instanceof Drive) {
                             invBlock = (Drive) networkBlock;
-
-                            Restored.getInstance().logInfo("Block is a drive!");
                         } else if (networkBlock instanceof Viewer) {
                             invBlock = (Viewer) networkBlock;
-
-                            Restored.getInstance().logInfo("Block is a viewer!");
                         } else if (networkBlock instanceof CraftingViewer) {
                             invBlock = (CraftingViewer) networkBlock;
-
-                            Restored.getInstance().logInfo("Block is a crafting viewer!");
                         } else if (networkBlock instanceof InventoryBlock) {
                             invBlock = (InventoryBlock) networkBlock;
                         }
 
                         if (invBlock == null) {
-                            Restored.getInstance().logInfo("Block is not an inventory block!");
                             return;
                         } else {
-                            Restored.getInstance().logInfo("Block is an inventory block!");
-
                             switch (type) {
                                 case PLACE_ONE:
-                                    Restored.getInstance().logInfo("Placing one...");
-
-                                    ItemStack placeLeft = invBlock.tryAddItem(event.getCursor());
-                                    if (placeLeft == null) {
-                                        return;
-                                    }
+                                    ItemStack cursor = event.getCursor();
+                                    if (cursor == null || cursor.getType().isAir()) return;
+                                    
+                                    ItemStack placeLeft = invBlock.tryAddItem(cursor);
                                     event.setCursor(placeLeft);
                                     break;
                                 case SHIFT_CLICK_FROM_OWN:
-                                    Restored.getInstance().logInfo("Shift clicking from own inventory...");
+                                    ItemStack itemToShift = event.getCurrentItem();
+                                    if (itemToShift == null || itemToShift.getType().isAir()) return;
 
-                                    ItemStack shiftLeft = invBlock.tryAddItem(event.getCurrentItem());
-                                    if (shiftLeft == null) {
-                                        return;
+                                    int originalAmount = itemToShift.getAmount();
+                                    ItemStack shiftLeft = itemToShift.clone();
+                                    
+                                    while (shiftLeft != null && shiftLeft.getAmount() > 0) {
+                                        int beforeAmount = shiftLeft.getAmount();
+                                        shiftLeft = invBlock.tryAddItem(shiftLeft);
+                                        if (shiftLeft != null && shiftLeft.getAmount() == beforeAmount) {
+                                            // No items were added, stop to avoid infinite loop
+                                            break;
+                                        }
                                     }
-                                    event.setCurrentItem(shiftLeft);
+
+                                    if (shiftLeft == null || shiftLeft.getAmount() == 0) {
+                                        event.setCurrentItem(null);
+                                    } else {
+                                        event.setCurrentItem(shiftLeft);
+                                    }
                                     break;
                             }
                         }

@@ -1,16 +1,15 @@
 package gg.drak.restored.data.blocks.impl;
 
-import gg.drak.thebase.lib.leonhard.storage.sections.FlatFileSection;
+import com.google.gson.JsonObject;
+import gg.drak.restored.Restored;
 import host.plas.bou.gui.InventorySheet;
 import host.plas.bou.gui.screens.blocks.ScreenBlock;
 import host.plas.bou.gui.screens.events.BlockCloseEvent;
 import host.plas.bou.gui.slots.Slot;
 import host.plas.bou.utils.ColorUtils;
-import gg.drak.restored.Restored;
 import gg.drak.restored.data.Network;
 import gg.drak.restored.data.blocks.BlockType;
 import gg.drak.restored.data.blocks.NetworkBlock;
-import gg.drak.restored.data.blocks.datablock.DataBlock;
 import gg.drak.restored.data.blocks.inventory.InventoryBlock;
 import gg.drak.restored.data.disks.StorageDisk;
 import gg.drak.restored.data.disks.impl.FourKDisk;
@@ -44,8 +43,8 @@ public class Drive extends NetworkBlock implements InventoryBlock {
         onLoad();
     }
 
-    public Drive(Network network, Location location, DataBlock block) {
-        super(BlockType.DRIVE, network, location, DriveItem::new, block);
+    public Drive(java.util.UUID uuid, Network network, Location location, com.google.gson.JsonObject data) {
+        super(BlockType.DRIVE, uuid, network, location, DriveItem::new, data);
 
         onLoad();
     }
@@ -54,29 +53,35 @@ public class Drive extends NetworkBlock implements InventoryBlock {
     public void onLoad() {
         disks = new ConcurrentSkipListMap<>();
 
-        FlatFileSection section = getDataBlock().getSection();
+        JsonObject data = getData();
+        if (data.has("disks")) {
+            JsonObject disksJson = data.getAsJsonObject("disks");
+            disksJson.entrySet().forEach(entry -> {
+                int index = Integer.parseInt(entry.getKey());
+                String identifier = entry.getValue().getAsString();
 
-        section.singleLayerKeySet("disks").forEach(s -> {
-            int index = Integer.parseInt(s);
-            String identifier = section.getString("disks." + s);
+                StorageDisk disk = new StorageDisk(this, identifier, index);
 
-            StorageDisk disk = new StorageDisk(this, identifier);
-
-            disks.put(index, disk);
-        });
+                disks.put(index, disk);
+            });
+        }
     }
 
-    @Override
-    public void onSave() {
+    public void onSaveSpecific() {
+        JsonObject disksJson = new JsonObject();
         disks.forEach((i, d) -> {
-            getDataBlock().write("disks." + i, d.getIdentifier());
+            if (d != null) {
+                disksJson.addProperty(String.valueOf(i), d.getIdentifier());
+            }
         });
+        getData().add("disks", disksJson);
+        
+        // Log for debugging
+        Restored.getInstance().logInfo("Saved drive " + getIdentifier() + " with " + disks.size() + " disks.");
     }
 
     @Override
     public InventorySheet buildInventorySheet(Player player, ScreenBlock block) {
-        Restored.getInstance().logInfo("Building inventory sheet for drive...");
-
         InventorySheet sheet = new InventorySheet(getType().getSlots());
 
         sheet.forEachSlot(this::buildDriveIcon);
@@ -85,62 +90,82 @@ public class Drive extends NetworkBlock implements InventoryBlock {
     }
 
     public void buildDriveIcon(Slot slot) {
-        Restored.getInstance().logInfo("Building drive icon for slot: " + slot.getIndex());
-
         int index = slot.getIndex();
 
-        getDriveIcon(index).ifPresent(slot::setIcon);
+        getDisk(index).ifPresentOrElse(disk -> {
+            ItemStack stack = disk.getItem();
+            Icon i = new Icon(stack);
+            slot.setIcon(i);
+
+            i.onClick(event -> {
+                Player player = (Player) event.getWhoClicked();
+                
+                removeDisk(index);
+                player.getInventory().addItem(stack);
+                
+                redraw();
+            });
+        }, () -> {
+            // slot.setIcon(null); // Clear icon if no disk
+        });
+    }
+
+    public void removeDisk(int index) {
+        disks.remove(index);
+        onSave();
+        getNetwork().ifPresent(Network::updateCache);
     }
 
     @Override
     public void onClose(BlockCloseEvent event) {
-        InventoryView view = event.getPlayer().getOpenInventory();
-        Inventory inventory = view.getTopInventory();
-        int index = 0;
-
-        prepareDisks();
-
-        for (ItemStack stack : inventory.getContents()) {
-            IndexedItem item = new IndexedItem(stack, index, inventory, event.getPlayer());
-            trySaveItem(item);
-            index ++;
-        }
+        // Do not clear disks here if we are using Icons for display,
+        // because inventory.getContents() will not contain the Icons.
+        // The disks are already saved via putDisk and onSave.
+        
+        // Update the network cache after closing the drive
+        getNetwork().ifPresent(Network::updateCache);
     }
 
     @Override
     public ItemStack tryAddItem(ItemStack stack) {
-        Restored.getInstance().logInfo("Trying to add item to drive...");
-
         if (stack == null || stack.getType() == Material.AIR) {
-            Restored.getInstance().logInfo("Item is null or air.");
-
             return stack;
-        }
-
-        ItemStack r;
-        if (stack.getAmount() > 1) {
-            r = stack.clone();
-            r.setAmount(stack.getAmount() - 1);
-        } else {
-            r = null;
         }
 
         if (! isCompatibleDisk(stack)) {
-            Restored.getInstance().logInfo("Item is not a disk.");
-
             return stack;
         }
 
-        addDisk(stack, disks.size());
+        ItemStack toAdd = stack.clone();
+        toAdd.setAmount(1);
 
-        redraw();
+        // Find the first empty slot
+        int index = -1;
+        for (int i = 0; i < getType().getSlots(); i++) {
+            if (! disks.containsKey(i)) {
+                index = i;
+                break;
+            }
+        }
 
-        return r;
+        if (index != -1) {
+            addDisk(toAdd, index);
+            redraw();
+
+            ItemStack r = stack.clone();
+            r.setAmount(stack.getAmount() - 1);
+            if (r.getAmount() <= 0) {
+                r = null;
+            }
+
+            return r;
+        }
+
+        return stack;
     }
 
-    // Prepare disks to be saved.
     public void prepareDisks() {
-        setDisks(new ConcurrentSkipListMap<>());
+        disks.clear();
     }
 
     public void trySaveItem(IndexedItem item) {
@@ -178,21 +203,18 @@ public class Drive extends NetworkBlock implements InventoryBlock {
     }
 
     public void addDisk(ItemStack stack, int index) {
-        Restored.getInstance().logInfo("Adding disk to drive...");
-
         ItemManager.readItem(stack).ifPresentOrElse(item -> {
             if (item instanceof FourKDiskItem) {
                 FourKDiskItem diskItem = (FourKDiskItem) item;
-                FourKDisk disk = new FourKDisk(this, diskItem.getIdentifier());
+                FourKDisk disk = new FourKDisk(this, diskItem.getIdentifier(), index);
                 putDisk(index, disk);
             } else if (item instanceof GenericDiskItem) {
                 GenericDiskItem diskItem = (GenericDiskItem) item;
-                StorageDisk disk = new StorageDisk(this, diskItem.getIdentifier());
+                StorageDisk disk = new StorageDisk(this, diskItem.getIdentifier(), index);
+                disk.setCapacity(diskItem.getSize());
                 putDisk(index, disk);
             }
-        }, () -> {
-            Restored.getInstance().logInfo("Item is not a disk.");
-        });
+        }, () -> {});
     }
 
     public Optional<Icon> getDriveIcon(int index) {
@@ -210,36 +232,21 @@ public class Drive extends NetworkBlock implements InventoryBlock {
     }
 
     public Optional<StorageDisk> getDisk(int index) {
-        AtomicReference<Optional<StorageDisk>> disk = new AtomicReference<>(Optional.empty());
-
-        disks.forEach((i, d) -> {
-            if (i == index) {
-                disk.set(Optional.of(d));
-            }
-        });
-
-        return disk.get();
+        return Optional.ofNullable(disks.get(index));
     }
 
     public void putDisk(int index, StorageDisk disk) {
-        Restored.getInstance().logInfo("Putting disk in drive...");
-
-        AtomicBoolean hasDisk = new AtomicBoolean(false);
-        getNetwork().ifPresentOrElse(network -> {
-            if (network.getDisks().contains(disk)) {
-                Restored.getInstance().logInfo("Disk is in the network already!");
-                hasDisk.set(true);
-            }
-        }, () -> {
-            Restored.getInstance().logInfo("No network found for drive.");
-        });
-
-        if (hasDisk.get()) return;
-
         disks.put(index, disk);
         onSave();
-
-        Restored.getInstance().logInfo("Disk put in drive.");
+        
+        // Update the network cache to include the new disk's capacity
+        getNetwork().ifPresent(net -> {
+            net.updateCache();
+            // Also save the disk itself to ensure its drive association is updated
+            disk.save();
+        });
+        
+        redraw();
     }
 
     @Override

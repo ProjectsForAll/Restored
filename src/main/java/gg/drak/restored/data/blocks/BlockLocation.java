@@ -1,5 +1,6 @@
 package gg.drak.restored.data.blocks;
 
+import com.google.gson.JsonObject;
 import lombok.Getter;
 import lombok.Setter;
 import org.bukkit.Bukkit;
@@ -17,6 +18,15 @@ public class BlockLocation implements Comparable<BlockLocation> {
         this.x = x;
         this.y = y;
         this.z = z;
+    }
+
+    public JsonObject toJson() {
+        JsonObject json = new JsonObject();
+        json.addProperty("world", world);
+        json.addProperty("x", x);
+        json.addProperty("y", y);
+        json.addProperty("z", z);
+        return json;
     }
 
     @Override
@@ -66,5 +76,17 @@ public class BlockLocation implements Comparable<BlockLocation> {
 
     public static BlockLocation of(Location location) {
         return of(location.getBlock());
+    }
+
+    public static BlockLocation fromJson(JsonObject locationJson) {
+        if (! locationJson.has("world") || ! locationJson.has("x") || ! locationJson.has("y") || ! locationJson.has("z")) {
+            return null;
+        }
+
+        String world = locationJson.get("world").getAsString();
+        int x = locationJson.get("x").getAsInt();
+        int y = locationJson.get("y").getAsInt();
+        int z = locationJson.get("z").getAsInt();
+        return new BlockLocation(world, x, y, z);
     }
 }

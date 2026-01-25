@@ -24,77 +24,85 @@ public class FilterDAO {
      * Set a filter for a player.
      * @param playerUuid Player UUID
      * @param filter Filter string
-     * @throws SQLException if database operation fails
      */
-    public void setFilter(String playerUuid, String filter) throws SQLException {
-        operator.ensureUsable();
-        
-        String statement = Statements.getStatement(Statements.StatementType.SET_FILTER, operator.getConnectorSet());
-        
-        operator.execute(statement, stmt -> {
-            try {
-                stmt.setString(1, playerUuid);
-                stmt.setString(2, filter);
-            } catch (Exception e) {
-                Restored.getInstance().logSevere("Failed to set values for SET_FILTER statement", e);
-                throw new RuntimeException(e);
-            }
-        });
+    public void setFilter(String playerUuid, String filter) {
+        try {
+            operator.ensureUsable();
+            String statement = Statements.getStatement(Statements.StatementType.SET_FILTER, operator.getConnectorSet());
+
+            operator.getMiddleware().queueOperation(statement, stmt -> {
+                try {
+                    stmt.setString(1, playerUuid);
+                    stmt.setString(2, filter);
+                } catch (Exception e) {
+                    Restored.getInstance().logSevere("Failed to set values for SET_FILTER statement", e);
+                    throw new RuntimeException(e);
+                }
+            });
+        } catch (Exception e) {
+            Restored.getInstance().logSevere("Failed to queue filter for player UUID: " + playerUuid, e);
+        }
     }
     
     /**
      * Get the last filter for a player.
      * @param playerUuid Player UUID
      * @return Optional containing filter string if found
-     * @throws SQLException if database operation fails
      */
-    public Optional<String> getLastFilter(String playerUuid) throws SQLException {
-        operator.ensureUsable();
-        
-        String statement = Statements.getStatement(Statements.StatementType.GET_FILTER, operator.getConnectorSet());
-        
-        AtomicReference<Optional<String>> ref = new AtomicReference<>(Optional.empty());
-        
-        operator.executeQuery(statement, stmt -> {
-            try {
-                stmt.setString(1, playerUuid);
-            } catch (Exception e) {
-                Restored.getInstance().logSevere("Failed to set values for GET_FILTER statement", e);
-                throw new RuntimeException(e);
-            }
-        }, rs -> {
-            try {
-                if (rs.next()) {
-                    String filter = rs.getString("Filter");
-                    if (filter != null && !filter.isEmpty()) {
-                        ref.set(Optional.of(filter));
-                    }
+    public Optional<String> getLastFilter(String playerUuid) {
+        try {
+            operator.ensureUsable();
+
+            String statement = Statements.getStatement(Statements.StatementType.GET_FILTER, operator.getConnectorSet());
+
+            AtomicReference<Optional<String>> ref = new AtomicReference<>(Optional.empty());
+
+            operator.executeQuery(statement, stmt -> {
+                try {
+                    stmt.setString(1, playerUuid);
+                } catch (Exception e) {
+                    Restored.getInstance().logSevere("Failed to set values for GET_FILTER statement", e);
+                    throw new RuntimeException(e);
                 }
-            } catch (Exception e) {
-                Restored.getInstance().logSevere("Failed to read values from GET_FILTER result set", e);
-            }
-        });
-        
-        return ref.get();
+            }, rs -> {
+                try {
+                    if (rs.next()) {
+                        String filter = rs.getString("Filter");
+                        if (filter != null && !filter.isEmpty()) {
+                            ref.set(Optional.of(filter));
+                        }
+                    }
+                } catch (Exception e) {
+                    Restored.getInstance().logSevere("Failed to read values from GET_FILTER result set", e);
+                }
+            });
+
+            return ref.get();
+        } catch (Exception e) {
+            Restored.getInstance().logSevere("Failed to get filter for player UUID: " + playerUuid, e);
+            return Optional.empty();
+        }
     }
     
     /**
      * Clear the filter for a player.
      * @param playerUuid Player UUID
-     * @throws SQLException if database operation fails
      */
-    public void clearFilter(String playerUuid) throws SQLException {
-        operator.ensureUsable();
-        
-        String statement = Statements.getStatement(Statements.StatementType.CLEAR_FILTER, operator.getConnectorSet());
-        
-        operator.execute(statement, stmt -> {
-            try {
-                stmt.setString(1, playerUuid);
-            } catch (Exception e) {
-                Restored.getInstance().logSevere("Failed to set values for CLEAR_FILTER statement", e);
-                throw new RuntimeException(e);
-            }
-        });
+    public void clearFilter(String playerUuid) {
+        try {
+            operator.ensureUsable();
+            String statement = Statements.getStatement(Statements.StatementType.CLEAR_FILTER, operator.getConnectorSet());
+
+            operator.getMiddleware().queueOperation(statement, stmt -> {
+                try {
+                    stmt.setString(1, playerUuid);
+                } catch (Exception e) {
+                    Restored.getInstance().logSevere("Failed to set values for CLEAR_FILTER statement", e);
+                    throw new RuntimeException(e);
+                }
+            });
+        } catch (Exception e) {
+            Restored.getInstance().logSevere("Failed to queue clear filter for player UUID: " + playerUuid, e);
+        }
     }
 }

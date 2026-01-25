@@ -30,6 +30,7 @@ public class StorageDisk implements Identifiable {
     private BigInteger capacity; // in items (not stacks)
     private ConcurrentSkipListSet<StoredItem> contents; // Map of ItemStacks to their quantity
     private Drive drive;
+    private Integer slot;
 
     public UUID getUuid() {
         return UUID.fromString(identifier);
@@ -42,34 +43,36 @@ public class StorageDisk implements Identifiable {
         buildOrGetSettings();
     }
 
+    public StorageDisk(Drive drive, String identifier, int slot) {
+        this.drive = drive;
+        this.identifier = identifier;
+        this.slot = slot;
+
+        buildOrGetSettings();
+    }
+
     public void buildOrGetSettings() {
-        try {
-            Optional<DiskDAO.DiskData> dataOpt = Restored.getDatabase().getDiskDAO().getById(identifier);
-            
-            if (dataOpt.isPresent()) {
-                DiskDAO.DiskData data = dataOpt.get();
-                this.capacity = data.getCapacity();
-                this.contents = data.getItems();
-            } else {
-                // Try to get capacity from disk item if it exists
-                // Default capacity if not found
-                this.capacity = BigInteger.valueOf(1024);
-                this.contents = new ConcurrentSkipListSet<>();
-                save();
-            }
-        } catch (SQLException e) {
-            Restored.getInstance().logSevere("Failed to load disk: " + identifier, e);
+        Optional<DiskDAO.DiskData> dataOpt = Restored.getDatabase().getDiskDAO().getById(identifier);
+
+        if (dataOpt.isPresent()) {
+            DiskDAO.DiskData data = dataOpt.get();
+            this.capacity = data.getCapacity();
+            this.contents = data.getItems();
+        } else {
+            // Try to get capacity from disk item if it exists
+            // Default capacity if not found
             this.capacity = BigInteger.valueOf(1024);
             this.contents = new ConcurrentSkipListSet<>();
+            save();
         }
     }
 
     public void save() {
-        try {
-            Restored.getDatabase().getDiskDAO().insert(identifier, capacity, contents);
-        } catch (SQLException e) {
-            Restored.getInstance().logSevere("Failed to save disk: " + identifier, e);
-        }
+        // Cache in middleware immediately
+        Restored.getDatabase().getMiddleware().cacheDisk(this);
+
+        String driveId = drive != null ? drive.getIdentifier() : null;
+        Restored.getDatabase().getDiskDAO().insert(identifier, driveId, slot, capacity, contents);
     }
 
     public StoredItem get(String uuid) {
@@ -127,19 +130,21 @@ public class StorageDisk implements Identifiable {
     public BigInteger addItem(ItemStack stack) {
         if (isFull()) return BigInteger.valueOf(stack.getAmount());
 
-        BigInteger itemQuantity = getQuantity(stack);
+        Optional<StoredItem> existing = getStoredItem(stack);
+        BigInteger itemQuantity = existing.map(StoredItem::getAmount).orElse(BigInteger.ZERO);
 
         if (! hasSpaceFor(stack)) {
-            BigInteger leftover = getRemainingCapacity().subtract(itemQuantity);
+            BigInteger canAdd = getRemainingCapacity();
+            if (canAdd.compareTo(BigInteger.ZERO) <= 0) return BigInteger.valueOf(stack.getAmount());
 
-            contents.removeIf(item -> item.isComparable(stack));
-            contents.add(new StoredItem(UUID.randomUUID().toString(), itemQuantity.add(leftover), stack));
+            existing.ifPresent(contents::remove);
+            contents.add(new StoredItem(existing.map(StoredItem::getIdentifier).orElse(UUID.randomUUID().toString()), itemQuantity.add(canAdd), stack));
 
-            return leftover;
+            return BigInteger.valueOf(stack.getAmount()).subtract(canAdd);
         }
 
-        contents.removeIf(item -> item.isComparable(stack));
-        contents.add(new StoredItem(UUID.randomUUID().toString(), itemQuantity.add(BigInteger.valueOf(stack.getAmount())), stack));
+        existing.ifPresent(contents::remove);
+        contents.add(new StoredItem(existing.map(StoredItem::getIdentifier).orElse(UUID.randomUUID().toString()), itemQuantity.add(BigInteger.valueOf(stack.getAmount())), stack));
 
         return BigInteger.ZERO;
     }
@@ -213,8 +218,9 @@ public class StorageDisk implements Identifiable {
 
         BigInteger leftover = real.getAmount().subtract(amount);
 
+        contents.remove(real);
         if (leftover.compareTo(BigInteger.ZERO) > 0) {
-            contents.add(new StoredItem(UUID.randomUUID().toString(), leftover, real.getItem()));
+            contents.add(new StoredItem(real.getIdentifier(), leftover, real.getItem()));
         }
     }
 

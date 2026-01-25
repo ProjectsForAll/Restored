@@ -12,7 +12,6 @@ import gg.drak.restored.Restored;
 import gg.drak.restored.data.Network;
 import gg.drak.restored.data.blocks.BlockType;
 import gg.drak.restored.data.blocks.NetworkBlock;
-import gg.drak.restored.data.blocks.datablock.DataBlock;
 import gg.drak.restored.data.blocks.inventory.InventoryBlock;
 import gg.drak.restored.data.items.impl.CraftingViewerItem;
 import gg.drak.restored.data.screens.items.ViewerPage;
@@ -50,8 +49,8 @@ public class CraftingViewer extends NetworkBlock implements InventoryBlock {
         super(BlockType.CRAFTING_VIEWER, network, location, CraftingViewerItem::new);
     }
 
-    public CraftingViewer(Network network, Location location, DataBlock block) {
-        super(BlockType.CRAFTING_VIEWER, network, location, CraftingViewerItem::new, block);
+    public CraftingViewer(java.util.UUID uuid, Network network, Location location, com.google.gson.JsonObject data) {
+        super(BlockType.CRAFTING_VIEWER, uuid, network, location, CraftingViewerItem::new, data);
     }
 
     @Override
@@ -60,7 +59,7 @@ public class CraftingViewer extends NetworkBlock implements InventoryBlock {
     }
 
     @Override
-    public void onSave() {
+    public void onSaveSpecific() {
 
     }
 
@@ -72,21 +71,19 @@ public class CraftingViewer extends NetworkBlock implements InventoryBlock {
 
         // Check if slot is a crafting slot - allow items there
         // For other slots, use viewer behavior
-        ItemStack r;
-        if (stack.getAmount() > 1) {
-            r = stack.clone();
-            r.setAmount(stack.getAmount() - 1);
-        } else {
-            r = null;
-        }
-
         if (!canAddItem(stack)) {
             return stack;
         }
 
-        addItem(stack);
+        addItem(stack.clone());
 
         redraw();
+
+        ItemStack r = stack.clone();
+        r.setAmount(stack.getAmount() - 1);
+        if (r.getAmount() <= 0) {
+            r = null;
+        }
 
         return r;
     }

@@ -1,9 +1,10 @@
 package gg.drak.restored.data;
 
 import gg.drak.restored.Restored;
+import gg.drak.restored.data.blocks.BlockLocation;
+import gg.drak.restored.data.blocks.LocatedBlock;
 import gg.drak.restored.data.blocks.NetworkMap;
 import gg.drak.restored.data.blocks.SingleNetworkMap;
-import gg.drak.restored.data.blocks.datablock.DataBlock;
 import gg.drak.restored.data.blocks.impl.Controller;
 import gg.drak.restored.data.blocks.impl.CraftingViewer;
 import gg.drak.restored.data.blocks.impl.Drive;
@@ -61,13 +62,17 @@ public class Network implements Comparable<Network> {
         this.permissionSystem = new PermissionSystem(this);
 
         this.cachedBlocks = new ConcurrentSkipListSet<>();
-        
+
+        // Cache in middleware immediately
+        Restored.getDatabase().getMiddleware().cacheNetwork(this);
+
+        // Save to database immediately to avoid foreign key constraint issues when blocks are added
+        save();
+    }
+
+    public void save() {
         // Save to database
-        try {
-            Restored.getDatabase().getNetworkDAO().insert(identifier, ownerUuid);
-        } catch (SQLException e) {
-            Restored.getInstance().logSevere("Failed to save network to database: " + identifier, e);
-        }
+        Restored.getDatabase().getNetworkDAO().insert(identifier, ownerUuid);
     }
 
     public Network(String identifier, Block controller, Player owner) {
@@ -75,6 +80,7 @@ public class Network implements Comparable<Network> {
 
         Controller c = new Controller(this, controller.getLocation());
         this.controller = c;
+        // Do not call updateCache here, it will be called when needed
         c.onPlaced();
     }
 
@@ -84,20 +90,16 @@ public class Network implements Comparable<Network> {
 
     public void init() {
         // Load permission system from database
-        try {
-            List<PermissionDAO.PermissionData> permissions = 
-                    Restored.getDatabase().getPermissionDAO().getByNetworkId(identifier);
-            
-            for (PermissionDAO.PermissionData perm : permissions) {
-                if (perm.getValue()) {
-                    permissionSystem.trust(
-                            perm.getPermissionNode(),
-                            perm.getPlayerUuid()
-                    );
-                }
+        List<PermissionDAO.PermissionData> permissions =
+                Restored.getDatabase().getPermissionDAO().getByNetworkId(identifier);
+
+        for (PermissionDAO.PermissionData perm : permissions) {
+            if (perm.getValue()) {
+                permissionSystem.trust(
+                        perm.getPermissionNode(),
+                        perm.getPlayerUuid()
+                );
             }
-        } catch (SQLException e) {
-            Restored.getInstance().logSevere("Failed to load permissions for network: " + identifier, e);
         }
     }
 
@@ -133,6 +135,11 @@ public class Network implements Comparable<Network> {
     }
 
     public ConcurrentSkipListSet<NetworkBlock> getBlocks() {
+        if (controller == null) {
+            // Try to find the controller if it's missing
+            getNetworkMap().getControllerImpl(Optional.of(this)).ifPresent(this::setController);
+        }
+
         if (cachedBlocks == null || lastCacheUpdate == null) {
             updateCache();
         } else {
@@ -146,13 +153,13 @@ public class Network implements Comparable<Network> {
     }
 
     public void updateCache() {
-        cachedBlocks = new ConcurrentSkipListSet<>();
+        ConcurrentSkipListSet<NetworkBlock> newBlocks = getConnectedBlocks();
+        
+        // Ensure all blocks in the new set know they belong to this network
+        newBlocks.forEach(block -> block.setNetwork(Optional.of(this)));
 
-        getConnectedBlocks().forEach(b -> {
-            if (b != null) {
-                cachedBlocks.add(b);
-            }
-        });
+        // Replace the old cache with the new one to avoid stale instances
+        this.cachedBlocks = newBlocks;
 
         lastCacheUpdate = new Date();
     }
@@ -161,30 +168,34 @@ public class Network implements Comparable<Network> {
         for (BlockFace face : faces) {
             Block relative = iteratingBlock.getRelative(face);
 
-            AtomicBoolean isAlreadyConnected = new AtomicBoolean(false);
-            connectedBlocks.forEach(b -> {
-                if (b.getBlock().equals(relative)) {
-                    isAlreadyConnected.set(true);
+            BlockLocation relLoc = gg.drak.restored.data.blocks.BlockLocation.of(relative);
+            
+            // Check if already in the list to avoid infinite recursion
+            boolean alreadyProcessed = false;
+            for (NetworkBlock b : connectedBlocks) {
+                if (b.getBlockLocation().equals(relLoc)) {
+                    alreadyProcessed = true;
+                    break;
                 }
-            });
-            if (isAlreadyConnected.get()) continue;
+            }
+            if (alreadyProcessed) continue;
 
-            Optional<DataBlock> dataBlock = NetworkManager.getDataBlockAt(relative, this);
-            if (dataBlock.isPresent()) {
-                Restored.getInstance().logInfo("DataBlock is present");
-
-                DataBlock b = dataBlock.get();
-
-                Optional<NetworkBlock> blockOptional = b.getNetworkBlock();
+            Optional<LocatedBlock> locatedBlock = NetworkMap.getLocatedBlock(relLoc);
+            if (locatedBlock.isPresent()) {
+                // Check if we already have an instance in our global cache
+                Optional<NetworkBlock> blockOptional = getNetworkBlock(relLoc);
+                
                 if (blockOptional.isEmpty()) {
-                    Restored.getInstance().logInfo("NetworkBlock is empty");
-                    continue;
+                    blockOptional = NetworkManager.createNetworkBlock(this, locatedBlock.get());
                 }
-                NetworkBlock block = blockOptional.get();
-                Restored.getInstance().logInfo("NetworkBlock is present");
 
-                connectedBlocks.add(block);
-                iterateConnected(faces, relative, connectedBlocks);
+                if (blockOptional.isPresent()) {
+                    NetworkBlock block = blockOptional.get();
+                    block.setNetwork(Optional.of(this)); // Ensure the block knows its network
+
+                    connectedBlocks.add(block);
+                    iterateConnected(faces, relative, connectedBlocks);
+                }
             }
         }
     }
@@ -229,7 +240,7 @@ public class Network implements Comparable<Network> {
         }
         
         for (StorageDisk disk : disks) {
-            if (disk.hasSpaceFor(stack)) {
+            if (disk.getRemainingCapacity().compareTo(BigInteger.ZERO) > 0) {
                 return true;
             }
         }
@@ -248,25 +259,27 @@ public class Network implements Comparable<Network> {
         }
         
         ItemStack remaining = stack.clone();
+        int originalAmount = stack.getAmount();
         
         for (StorageDisk disk : disks) {
             if (remaining.getAmount() <= 0) {
                 break;
             }
             
-            if (disk.hasSpaceFor(remaining)) {
+            if (! disk.isFull()) {
                 BigInteger leftover = disk.addItem(remaining);
                 disk.save();
                 
-                if (leftover.compareTo(BigInteger.ZERO) == 0) {
-                    return true;
+                if (leftover.compareTo(BigInteger.ZERO) <= 0) {
+                    remaining.setAmount(0);
+                    break;
                 }
                 
                 remaining.setAmount(leftover.intValue());
             }
         }
         
-        return remaining.getAmount() < stack.getAmount();
+        return remaining.getAmount() < originalAmount;
     }
 
     public boolean canInsertOne(ItemStack stack) {
@@ -354,23 +367,15 @@ public class Network implements Comparable<Network> {
         getNetworkMap().save();
         
         // Save permission system to database
-        try {
-            // Clear existing permissions
-            Restored.getDatabase().getPermissionDAO().removeAllPermissions(identifier);
-            
-            // Save current permissions
-            permissionSystem.getTrusted().forEach((node, uuids) -> {
-                for (String uuid : uuids) {
-                    try {
-                        Restored.getDatabase().getPermissionDAO().setPermission(identifier, uuid, node, true);
-                    } catch (SQLException e) {
-                        Restored.getInstance().logSevere("Failed to save permission for network: " + identifier, e);
-                    }
-                }
-            });
-        } catch (SQLException e) {
-            Restored.getInstance().logSevere("Failed to save permissions for network: " + identifier, e);
-        }
+        // Clear existing permissions
+        Restored.getDatabase().getPermissionDAO().removeAllPermissions(identifier);
+
+        // Save current permissions
+        permissionSystem.getTrusted().forEach((node, uuids) -> {
+            for (String uuid : uuids) {
+                Restored.getDatabase().getPermissionDAO().setPermission(identifier, uuid, node, true);
+            }
+        });
     }
 
     public boolean hasPermission(Player player, PermissionNode permission) {
@@ -397,16 +402,11 @@ public class Network implements Comparable<Network> {
 
     public void onBlockBreak(BlockBreakEvent event) {
         Block block = event.getBlock();
-        Optional<DataBlock> dataBlockOptional = NetworkManager.getDataBlockAt(block, this);
+        Optional<NetworkBlock> networkBlockOptional = NetworkManager.getNetworkBlockAt(block);
         
-        if (dataBlockOptional.isPresent()) {
-            DataBlock dataBlock = dataBlockOptional.get();
-            Optional<NetworkBlock> networkBlockOptional = dataBlock.getNetworkBlock();
-            
-            if (networkBlockOptional.isPresent()) {
-                NetworkBlock networkBlock = networkBlockOptional.get();
-                networkBlock.onBreak(event);
-            }
+        if (networkBlockOptional.isPresent()) {
+            NetworkBlock networkBlock = networkBlockOptional.get();
+            networkBlock.onBreak(event);
         }
     }
 
@@ -414,16 +414,11 @@ public class Network implements Comparable<Network> {
         Block block = event.getClickedBlock();
         if (block == null) return;
         
-        Optional<DataBlock> dataBlockOptional = NetworkManager.getDataBlockAt(block, this);
+        Optional<NetworkBlock> networkBlockOptional = NetworkManager.getNetworkBlockAt(block);
         
-        if (dataBlockOptional.isPresent()) {
-            DataBlock dataBlock = dataBlockOptional.get();
-            Optional<NetworkBlock> networkBlockOptional = dataBlock.getNetworkBlock();
-            
-            if (networkBlockOptional.isPresent()) {
-                NetworkBlock networkBlock = networkBlockOptional.get();
-                networkBlock.onRightClick(event.getPlayer());
-            }
+        if (networkBlockOptional.isPresent()) {
+            NetworkBlock networkBlock = networkBlockOptional.get();
+            networkBlock.onRightClick(event.getPlayer());
         }
     }
 
@@ -443,16 +438,18 @@ public class Network implements Comparable<Network> {
         getNetworkMap().delete();
         
         // Delete from database
-        try {
-            Restored.getDatabase().getNetworkDAO().delete(identifier);
-            Restored.getDatabase().getNetworkBlockDAO().deleteByNetworkId(identifier);
-            Restored.getDatabase().getPermissionDAO().removeAllPermissions(identifier);
-        } catch (SQLException e) {
-            Restored.getInstance().logSevere("Failed to delete network from database: " + identifier, e);
-        }
+        Restored.getDatabase().getNetworkDAO().delete(identifier);
+        Restored.getDatabase().getNetworkBlockDAO().deleteByNetworkId(identifier);
+        Restored.getDatabase().getPermissionDAO().removeAllPermissions(identifier);
         
         // Unload from manager
-        NetworkManager.unloadNetwork(this);
+        NetworkManager.getNetworks().removeIf(n -> n.getUuid().equals(getUuid()));
+        NetworkMap.unloadSingleMap(getIdentifier());
+    }
+
+    public Optional<NetworkBlock> getNetworkBlock(BlockLocation location) {
+        if (cachedBlocks == null) return Optional.empty();
+        return cachedBlocks.stream().filter(block -> block.getBlockLocation().equals(location)).findFirst();
     }
     
     @Override

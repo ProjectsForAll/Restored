@@ -35,10 +35,10 @@ public class DriveItem extends RestoredItem implements IPlaceable {
 
     @Override
     public void onNoNetworkPlace(Block atBlock, Player placedBy) {
+        placeAsBlock(atBlock, placedBy);
+
         Drive drive = new Drive(null, atBlock.getLocation());
         drive.onPlaced();
-
-        placeAsBlock(atBlock, placedBy);
     }
 
     @Override

@@ -15,6 +15,7 @@ import java.math.BigInteger;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
@@ -25,7 +26,6 @@ public class ItemManager {
 
         PersistentDataContainer container = meta.getPersistentDataContainer();
         if (! container.has(RestoredItem.getTypeKey())) {
-            Restored.getInstance().logInfo("Item has no type key...");
             return null;
         }
 
@@ -35,7 +35,6 @@ public class ItemManager {
     public static ItemType getTypeFrom(ItemStack stack) {
         String type = deserializeType(stack);
         if (type == null) {
-            Restored.getInstance().logInfo("Item has no type key...");
             return ItemType.NONE;
         }
 
@@ -60,11 +59,13 @@ public class ItemManager {
             case CRAFTING_VIEWER:
                 return new CraftingViewerItem();
             case GENERIC_DISK:
-                return new GenericDiskItem(ItemType.GENERIC_DISK, readCapacity(stack).get(), readDiskIdentifier(stack).get());
+                Optional<BigInteger> capacity = readCapacity(stack);
+                Optional<String> identifier = readDiskIdentifier(stack);
+                return new GenericDiskItem(ItemType.GENERIC_DISK, capacity.orElse(BigInteger.valueOf(1000)), identifier.orElse(UUID.randomUUID().toString()));
             case FOUR_K_DISK:
-                return new FourKDiskItem(readDiskIdentifier(stack).get());
+                Optional<String> fourKIdentifier = readDiskIdentifier(stack);
+                return new FourKDiskItem(fourKIdentifier.orElse(UUID.randomUUID().toString()));
             default:
-                Restored.getInstance().logInfo("Item has no type key...");
                 return null;
         }
     }

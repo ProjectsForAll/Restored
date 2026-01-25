@@ -8,7 +8,6 @@ import gg.drak.restored.Restored;
 import gg.drak.restored.data.Network;
 import gg.drak.restored.data.blocks.BlockType;
 import gg.drak.restored.data.blocks.NetworkBlock;
-import gg.drak.restored.data.blocks.datablock.DataBlock;
 import gg.drak.restored.data.items.impl.ControllerItem;
 import lombok.Getter;
 import lombok.Setter;
@@ -28,8 +27,8 @@ public class Controller extends NetworkBlock {
         super(BlockType.CONTROLLER, network, location, ControllerItem::new);
     }
 
-    public Controller(Network network, Location location, DataBlock block) {
-        super(BlockType.CONTROLLER, network, location, ControllerItem::new, block);
+    public Controller(java.util.UUID uuid, Network network, Location location, com.google.gson.JsonObject data) {
+        super(BlockType.CONTROLLER, uuid, network, location, ControllerItem::new, data);
     }
 
     @Override
@@ -38,7 +37,7 @@ public class Controller extends NetworkBlock {
     }
 
     @Override
-    public void onSave() {
+    public void onSaveSpecific() {
 
     }
 

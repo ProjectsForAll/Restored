@@ -11,4 +11,10 @@ public class FourKDisk extends StorageDisk {
 
         setCapacity(BigInteger.valueOf(4096));
     }
+
+    public FourKDisk(Drive drive, String identifier, int slot) {
+        super(drive, identifier, slot);
+
+        setCapacity(BigInteger.valueOf(4096));
+    }
 }

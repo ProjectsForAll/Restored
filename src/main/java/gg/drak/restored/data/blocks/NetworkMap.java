@@ -1,9 +1,9 @@
 package gg.drak.restored.data.blocks;
 
 import gg.drak.restored.Restored;
-import gg.drak.restored.config.NetworkMapConfig;
 import gg.drak.restored.data.Network;
 import gg.drak.restored.data.NetworkManager;
+import gg.drak.restored.database.MainOperator;
 import lombok.Getter;
 import lombok.Setter;
 import org.bukkit.Location;
@@ -19,8 +19,6 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public class NetworkMap {
     @Getter @Setter
     private static ConcurrentSkipListSet<SingleNetworkMap> networkMaps = new ConcurrentSkipListSet<>();
-    @Getter @Setter
-    private static ConcurrentSkipListMap<BlockLocation, LocatedBlock> locatedBlocks = new ConcurrentSkipListMap<>();
 
     public static void loadSingleMap(SingleNetworkMap singleNetworkMap) {
         networkMaps.add(singleNetworkMap);
@@ -36,14 +34,7 @@ public class NetworkMap {
 
     public static Optional<SingleNetworkMap> getNetworkMap(BlockLocation blockLocation) {
         return networkMaps.stream().filter(singleNetworkMap -> {
-            AtomicBoolean found = new AtomicBoolean(false);
-            singleNetworkMap.getLocatedBlocks().forEach((location, locatedBlock) -> {
-                if (location.equals(blockLocation)) {
-                    found.set(true);
-                }
-            });
-
-            return found.get();
+            return singleNetworkMap.getLocatedBlocks().containsKey(blockLocation);
         }).findFirst();
     }
 
@@ -56,21 +47,15 @@ public class NetworkMap {
     }
 
     public static void addLocatedBlock(LocatedBlock locatedBlock) {
-        locatedBlocks.put(locatedBlock.getLocation(), locatedBlock);
+        // No longer needed as middleware handles it, but kept for compatibility
     }
 
     public static void removeLocatedBlock(String identifier) {
-        Optional<LocatedBlock> block = getLocatedBlock(identifier);
-        locatedBlocks.forEach((location, locatedBlock) -> {
-            if (locatedBlock.getIdentifier().equals(identifier)) {
-                locatedBlocks.remove(location);
-            }
+        getNetworkMaps().forEach(singleNetworkMap -> {
+            singleNetworkMap.getLocatedBlocks().entrySet().removeIf(entry -> entry.getValue().getIdentifier().equals(identifier));
         });
-
-        block.map(LocatedBlock::getSingleNetworkMap).flatMap(singleNetworkMap -> {
-            singleNetworkMap.ifPresent(networkMap -> networkMap.removeLocatedBlock(identifier));
-            return singleNetworkMap;
-        }).ifPresent(networkMap -> confirmRemove(identifier, networkMap));
+        
+        Restored.getDatabase().getMiddleware().removeBlockFromCache(identifier);
     }
 
     public static void removeLocatedBlock(LocatedBlock block) {
@@ -82,20 +67,28 @@ public class NetworkMap {
     }
 
     public static void confirmRemove(String identifier, SingleNetworkMap singleNetworkMap) {
-        if (hasLocatedBlock(identifier)) {
-            removeLocatedBlock(identifier);
-        }
+        removeLocatedBlock(identifier);
         if (singleNetworkMap.hasLocatedBlock(identifier)) {
             singleNetworkMap.removeLocatedBlock(identifier);
         }
     }
 
     public static Optional<LocatedBlock> getLocatedBlock(String identifier) {
-        return locatedBlocks.values().stream().filter(locatedBlock -> locatedBlock.getIdentifier().equals(identifier)).findFirst();
+        Optional<NetworkBlock> cached = Restored.getDatabase().getMiddleware().getCachedBlock(identifier);
+        if (cached.isPresent()) return cached.map(LocatedBlock::new);
+        
+        return Restored.getDatabase().getNetworkBlockDAO().getById(identifier).map(data -> {
+            // Create a temporary LocatedBlock from the data
+            return new LocatedBlock(data.getIdentifier(), data.getNetworkId(), data.getBlockType(), data.asBlockLocation(), data.getData());
+        });
     }
 
     public static Optional<LocatedBlock> getLocatedBlock(BlockLocation blockLocation) {
-        return Optional.ofNullable(locatedBlocks.get(blockLocation));
+        for (SingleNetworkMap map : networkMaps) {
+            Optional<LocatedBlock> block = map.getLocatedBlock(blockLocation);
+            if (block.isPresent()) return block;
+        }
+        return Optional.empty();
     }
 
     public static Optional<LocatedBlock> getLocatedBlock(Block block) {
@@ -123,12 +116,14 @@ public class NetworkMap {
         return uuid;
     }
 
-    public static NetworkMapConfig getConfig() {
-        return Restored.getNetworkMapConfig();
+    public static MainOperator getDatabase() {
+        return Restored.getDatabase();
     }
 
     public static void saveAllNetworks() {
-        getConfig().saveNetworkMaps(networkMaps);
+        getNetworkMaps().forEach(singleNetworkMap -> {
+            singleNetworkMap.getNetwork().ifPresent(Network::onSave);
+        });
     }
 
     public static void saveNetwork(String identifier) {
@@ -140,31 +135,34 @@ public class NetworkMap {
     }
 
     public static void saveNetwork(SingleNetworkMap singleNetworkMap) {
-        getConfig().saveNetworkMap(singleNetworkMap);
+        getDatabase().saveNetworkMap(singleNetworkMap);
     }
 
     public static void loadAllNetworks() {
-        networkMaps = getConfig().getNetworkMaps();
+        networkMaps = getDatabase().getNetworkMaps();
+        
+        // The global locatedBlocks mapping is now handled by the middleware's block cache
+        // and the individual SingleNetworkMaps.
     }
 
     public static void loadNetwork(String identifier) {
-        getConfig().getNetworkMap(identifier).ifPresent(NetworkMap::loadSingleMap);
+        getDatabase().getNetworkMap(identifier).ifPresent(NetworkMap::loadSingleMap);
     }
 
     public static void saveAllLocatedBlocks() {
-        getConfig().saveLocatedBlocks(locatedBlocks.values());
+        // getConfig().saveLocatedBlocks(locatedBlocks.values());
     }
 
     public static void saveLocatedBlock(LocatedBlock locatedBlock) {
-        getConfig().saveLocatedBlock(locatedBlock);
+        // getConfig().saveLocatedBlock(locatedBlock);
     }
 
     public static void loadAllLocatedBlocks() {
-        locatedBlocks = getConfig().getLocatedBlocks();
+        // locatedBlocks = getConfig().getLocatedBlocks();
     }
 
     public static void loadLocatedBlock(LocatedBlock locatedBlock) {
-        getConfig().getLocatedBlock(locatedBlock.getIdentifier()).ifPresent(NetworkMap::addLocatedBlock);
+        // getConfig().getLocatedBlock(locatedBlock.getIdentifier()).ifPresent(NetworkMap::addLocatedBlock);
     }
 
     public static void init() {
@@ -199,7 +197,7 @@ public class NetworkMap {
         SingleNetworkMap singleNetworkMap = new SingleNetworkMap(network.getIdentifier(), network.getOwnerUuid(), new ConcurrentSkipListSet<>());
 
         network.getBlocks().forEach(networkBlock -> {
-            LocatedBlock locatedBlock = new LocatedBlock(networkBlock.getIdentifier(), network.getIdentifier(), networkBlock.getType(), networkBlock.getBlockLocation());
+            LocatedBlock locatedBlock = new LocatedBlock(networkBlock.getIdentifier(), network.getIdentifier(), networkBlock.getType(), networkBlock.getBlockLocation(), networkBlock.getData().toString());
             singleNetworkMap.addLocatedBlock(locatedBlock);
         });
 
@@ -207,7 +205,7 @@ public class NetworkMap {
     }
 
     public static void delete(String identifier) {
-        getConfig().deleteNetworkMap(identifier);
+        // getConfig().deleteNetworkMap(identifier);
 
         unloadSingleMap(identifier);
     }
@@ -217,7 +215,8 @@ public class NetworkMap {
     }
 
     public static boolean hasNetworkHardLookup(String identifier) {
-        return getConfig().containsNetwork(identifier);
+        // return getConfig().containsNetwork(identifier);
+        return false;
     }
 
     public static boolean hasNetwork(String identifier) {

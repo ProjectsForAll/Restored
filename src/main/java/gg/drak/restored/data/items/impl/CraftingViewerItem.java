@@ -35,10 +35,10 @@ public class CraftingViewerItem extends RestoredItem implements IPlaceable {
 
     @Override
     public void onNoNetworkPlace(Block atBlock, Player placedBy) {
+        placeAsBlock(atBlock, placedBy);
+
         CraftingViewer craftingViewer = new CraftingViewer(null, atBlock.getLocation());
         craftingViewer.onPlaced();
-
-        placeAsBlock(atBlock, placedBy);
     }
 
     @Override

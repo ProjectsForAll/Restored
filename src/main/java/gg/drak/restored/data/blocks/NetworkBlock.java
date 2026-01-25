@@ -1,14 +1,10 @@
 package gg.drak.restored.data.blocks;
 
-import host.plas.bou.gui.InventorySheet;
-import host.plas.bou.gui.ScreenManager;
-import host.plas.bou.gui.screens.ScreenInstance;
+import com.google.gson.JsonObject;
 import host.plas.bou.gui.screens.blocks.ScreenBlock;
 import gg.drak.restored.Restored;
 import gg.drak.restored.data.Network;
 import gg.drak.restored.data.NetworkManager;
-import gg.drak.restored.data.blocks.datablock.DataBlock;
-import gg.drak.restored.data.blocks.datablock.IDatalizable;
 import gg.drak.restored.data.blocks.impl.Controller;
 import gg.drak.restored.data.items.RestoredItem;
 import lombok.Getter;
@@ -18,21 +14,34 @@ import org.bukkit.Material;
 import org.bukkit.block.Block;
 import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.inventory.ItemStack;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Supplier;
 
 @Getter @Setter
-public abstract class NetworkBlock extends ScreenBlock implements IDatalizable {
+public abstract class NetworkBlock extends ScreenBlock {
     private String identifier;
     private BlockType type;
     private Optional<Network> network;
-    private Location location;
+    private BlockLocation location;
     private Supplier<RestoredItem> itemGetter;
-    private DataBlock dataBlock;
+    private JsonObject data;
 
-    public NetworkBlock(BlockType type, UUID uuid, Network network, Location location, Supplier<RestoredItem> itemGetter) {
+    public static JsonObject newData(String identifier, BlockType type, Optional<Network> network, Location location) {
+        JsonObject data = new JsonObject();
+
+        data.addProperty("identifier", identifier);
+        data.addProperty("type", type.name());
+        data.add("location", BlockLocation.of(location).toJson());
+        data.addProperty("hasNetwork", network.isPresent());
+        data.addProperty("networkId", network.map(Network::getUuid).map(UUID::toString).orElse("null"));
+
+        return data;
+    }
+
+    public NetworkBlock(BlockType type, UUID uuid, @Nullable Network network, Location location, Supplier<RestoredItem> itemGetter, JsonObject data) {
         super(type, location);
         this.type = type;
         this.identifier = uuid.toString();
@@ -41,55 +50,67 @@ public abstract class NetworkBlock extends ScreenBlock implements IDatalizable {
         } else {
             this.network = Optional.of(network);
         }
-        this.location = location;
+        this.location = BlockLocation.of(location);
         this.itemGetter = itemGetter;
 
-        this.dataBlock = new DataBlock(getBlock(), this.network, type);
-
-        NetworkManager.saveDataBlockAt(this.getDataBlock());
+        this.data = data;
     }
 
-    public NetworkBlock(BlockType type, UUID uuid, Network network, Location location, Supplier<RestoredItem> itemGetter, DataBlock dataBlock) {
-        super(type, location);
-        this.type = type;
-        this.identifier = uuid.toString();
-        if (network == null) {
-            this.network = Optional.empty();
-        } else {
-            this.network = Optional.of(network);
-        }
-        this.location = location;
-        this.itemGetter = itemGetter;
-
-        this.dataBlock = dataBlock;
-
-        NetworkManager.saveDataBlockAt(this.getDataBlock());
+    public NetworkBlock(BlockType type, UUID uuid, @Nullable Network network, Location location, Supplier<RestoredItem> itemGetter) {
+        this(type, uuid, network, location, itemGetter, newData(uuid.toString(), type, Optional.ofNullable(network), location));
     }
 
-    public NetworkBlock(BlockType type, Network network, Location location, Supplier<RestoredItem> itemGetter) {
+    public NetworkBlock(BlockType type, @Nullable Network network, Location location, Supplier<RestoredItem> itemGetter) {
         this(type, UUID.randomUUID(), network, location, itemGetter);
     }
 
-    public NetworkBlock(BlockType type, Network network, Location location, Supplier<RestoredItem> itemGetter, DataBlock dataBlock) {
-        this(type, UUID.randomUUID(), network, location, itemGetter, dataBlock);
+    public NetworkBlock(BlockType type, @Nullable Network network, Location location, Supplier<RestoredItem> itemGetter, JsonObject data) {
+        this(type, UUID.randomUUID(), network, location, itemGetter, data);
     }
 
     public abstract void onLoad();
 
-    public abstract void onSave();
+    public abstract void onSaveSpecific();
+
+    public void onSave() {
+        onSaveSpecific();
+        saveData();
+    }
 
     public void onPlaced() {
         Restored.getInstance().logInfo("Placed block: " + this.getIdentifier());
 
-        saveDataBlock();
+        // Cache in middleware immediately
+        Restored.getDatabase().getMiddleware().cacheBlock(this);
+
         LocatedBlock block = new LocatedBlock(this);
-        NetworkMap.addLocatedBlock(block);
-        block.save();
+        // NetworkMap.addLocatedBlock(block); // No longer needed as middleware handles it
+        // block.save();
 
         network.ifPresent(value -> {
+            onSave();
             SingleNetworkMap map = value.getNetworkMap();
             map.addLocatedBlock(block);
             map.save();
+        });
+    }
+
+    public Location getLocation() {
+        return location.toLocation();
+    }
+
+    public void saveData() {
+        // Cache in middleware immediately
+        Restored.getDatabase().getMiddleware().cacheBlock(this);
+
+        network.ifPresent(net -> {
+            String dataString = data.toString();
+            Restored.getDatabase().getNetworkBlockDAO().insert(identifier, net.getIdentifier(), type, dataString);
+            
+            // Update the data in the SingleNetworkMap
+            net.getNetworkMap().getLocatedBlock(location).ifPresent(locatedBlock -> {
+                locatedBlock.setData(dataString);
+            });
         });
     }
 
@@ -98,7 +119,6 @@ public abstract class NetworkBlock extends ScreenBlock implements IDatalizable {
         if (! getBlock().equals(block)) return;
 
         if (this instanceof Controller) {
-            Controller controller = (Controller) this;
             getNetwork().ifPresent(Network::delete);
         }
 
@@ -113,10 +133,9 @@ public abstract class NetworkBlock extends ScreenBlock implements IDatalizable {
         network.ifPresent(value -> value.removeBlock(this));
         network = Optional.empty();
 
-        getDataBlock().setNetwork(Optional.empty());
-        getDataBlock().delete();
+        Restored.getDatabase().getNetworkBlockDAO().delete(identifier);
 
-        NetworkMap.getLocatedBlock(this.getIdentifier()).ifPresent(LocatedBlock::remove);
+        NetworkMap.removeLocatedBlock(this.getIdentifier());
 
         setAsAir();
     }
@@ -142,20 +161,10 @@ public abstract class NetworkBlock extends ScreenBlock implements IDatalizable {
     }
 
     public Block getBlock() {
-        return location.getBlock();
+        return location.toBlock();
     }
 
     public BlockLocation getBlockLocation() {
-        return BlockLocation.of(getLocation());
-    }
-
-    public void redraw() {
-        ScreenManager.getPlayersOf(this).forEach(screenInstance -> {
-            screenInstance.close();
-
-            InventorySheet sheet = buildInventorySheet(screenInstance.player, this);
-            ScreenInstance instance = new ScreenInstance(screenInstance.player, screenInstance.getType(), sheet);
-            instance.setBlock(this);
-        });
+        return location;
     }
 }

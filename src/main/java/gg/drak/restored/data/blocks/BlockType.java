@@ -11,7 +11,7 @@ import org.bukkit.Location;
 
 @Getter
 public enum BlockType implements GuiType {
-    CONTROLLER(27, "Controller"),
+    CONTROLLER(9, "Controller"),
     DRIVE(9, "Drive"),
     VIEWER(54, "Viewer"),
     CRAFTING_VIEWER(54, "Crafting Viewer"),
@@ -29,6 +29,21 @@ public enum BlockType implements GuiType {
 
     BlockType() {
         this(-1, null);
+    }
+
+    public static NetworkBlock getBlock(BlockType type, java.util.UUID uuid, Network network, Location location, com.google.gson.JsonObject data) {
+        switch (type) {
+            case CONTROLLER:
+                return new Controller(uuid, network, location, data);
+            case DRIVE:
+                return new Drive(uuid, network, location, data);
+            case VIEWER:
+                return new Viewer(uuid, network, location, data);
+            case CRAFTING_VIEWER:
+                return new CraftingViewer(uuid, network, location, data);
+            default:
+                return null;
+        }
     }
 
     public static NetworkBlock getBlock(BlockType type, Network network, Location location) {

@@ -39,10 +39,16 @@ public class StoredItem implements Identifiable {
     public StoredItem(ItemData data) {
         this.identifier = data.getIdentifier();
         this.amount = data.getAmount();
-        this.item = data.getStack();
+        try {
+            this.item = data.getStack();
+        } catch (Exception e) {
+            gg.drak.restored.Restored.getInstance().logWarning("Failed to get stack from ItemData for identifier: " + identifier + ". ItemData contents: " + data.getData());
+            this.item = new org.bukkit.inventory.ItemStack(org.bukkit.Material.BARRIER);
+        }
     }
 
     public static ItemStack flattenStack(ItemStack stack) {
+        if (stack == null) return null;
         ItemStack newStack = stack.clone();
         newStack.setAmount(1);
         return newStack;
@@ -53,9 +59,10 @@ public class StoredItem implements Identifiable {
     }
 
     public boolean isComparable(ItemStack stack) {
+        if (stack == null) return false;
         ItemStack flattened = flattenStack(stack);
 
-        return this.item.equals(flattened);
+        return this.item.isSimilar(flattened);
     }
 
     public Icon asPageItem() {

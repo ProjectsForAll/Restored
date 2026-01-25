@@ -5,9 +5,11 @@ import host.plas.bou.gui.ScreenManager;
 import host.plas.bou.gui.screens.ScreenInstance;
 import gg.drak.restored.Restored;
 import gg.drak.restored.data.blocks.NetworkBlock;
+import gg.drak.restored.data.blocks.BlockLocation;
+import gg.drak.restored.data.blocks.BlockType;
+import gg.drak.restored.data.blocks.LocatedBlock;
 import gg.drak.restored.data.blocks.NetworkMap;
 import gg.drak.restored.data.blocks.SingleNetworkMap;
-import gg.drak.restored.data.blocks.datablock.DataBlock;
 import gg.drak.restored.data.blocks.impl.Drive;
 import gg.drak.restored.data.disks.StorageDisk;
 import gg.drak.restored.data.items.IPlaceable;
@@ -35,25 +37,29 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentSkipListSet;
 
 public class NetworkManager {
-    @Getter @Setter
-    private static ConcurrentSkipListSet<Network> networks = new ConcurrentSkipListSet<>();
-
-    private static Optional<Network> getNetwork(String identifier) {
-        return networks.stream().filter(n -> n.getIdentifier().equals(identifier)).findFirst();
+    public static Optional<Network> getNetwork(String identifier) {
+        Optional<Network> cached = Restored.getDatabase().getMiddleware().getCachedNetwork(identifier);
+        if (cached.isPresent()) return cached;
+        
+        return Restored.getDatabase().getNetworkDAO().getById(identifier).map(data -> {
+            Network network = new Network(data.getIdentifier(), data.getOwnerUuid());
+            Restored.getDatabase().getMiddleware().cacheNetwork(network);
+            return network;
+        });
     }
 
     public static Optional<Network> getNetwork(UUID uuid) {
-        return networks.stream().filter(n -> n.getUuid().equals(uuid)).findFirst();
+        return getNetwork(uuid.toString());
     }
 
     public static void loadNetwork(Network network) {
-        networks.add(network);
+        Restored.getDatabase().getMiddleware().cacheNetwork(network);
     }
 
     public static void unloadNetwork(Network network) {
-        networks.removeIf(n -> n.getUuid().equals(network.getUuid()));
+        Restored.getDatabase().getMiddleware().removeNetworkFromCache(network.getIdentifier());
 
-        NetworkMap.delete(network.getIdentifier());
+        NetworkMap.unloadSingleMap(network.getIdentifier());
     }
 
     public static Optional<Network> getOrGetNetwork(String identifier) {
@@ -75,29 +81,49 @@ public class NetworkManager {
         return getOrGetNetwork(uuid.toString());
     }
 
-    @Getter @Setter
-    private static ConcurrentSkipListSet<StorageDisk> disks = new ConcurrentSkipListSet<>();
-
     public static Optional<StorageDisk> getDisk(String identifier) {
-        return disks.stream().filter(d -> d.getIdentifier().equals(identifier)).findFirst();
+        Optional<StorageDisk> cached = Restored.getDatabase().getMiddleware().getCachedDisk(identifier);
+        if (cached.isPresent()) return cached;
+        
+        return Restored.getDatabase().getDiskDAO().getById(identifier).map(data -> {
+            StorageDisk disk = new StorageDisk(null, data.getIdentifier(), data.getSlot());
+            disk.setCapacity(data.getCapacity());
+            disk.setContents(data.getItems());
+            Restored.getDatabase().getMiddleware().cacheDisk(disk);
+            return disk;
+        });
     }
 
     public static Optional<StorageDisk> getDisk(UUID uuid) {
-        return disks.stream().filter(d -> d.getUuid().equals(uuid)).findFirst();
+        return getDisk(uuid.toString());
     }
 
     public static void addDisk(StorageDisk disk) {
-        disks.add(disk);
+        Restored.getDatabase().getMiddleware().cacheDisk(disk);
     }
 
     public static void removeDisk(StorageDisk disk) {
-        disks.removeIf(d -> d.getUuid().equals(disk.getUuid()));
+        Restored.getDatabase().getMiddleware().removeDiskFromCache(disk.getIdentifier());
     }
 
     public static StorageDisk getOrGetDisk(Drive drive, String identifier) {
         Optional<StorageDisk> disk = getDisk(identifier);
 
-        return disk.orElseGet(() -> new StorageDisk(drive, identifier));
+        return disk.orElseGet(() -> {
+            StorageDisk newDisk = new StorageDisk(drive, identifier);
+            addDisk(newDisk);
+            return newDisk;
+        });
+    }
+
+    public static StorageDisk getOrGetDisk(Drive drive, String identifier, int slot) {
+        Optional<StorageDisk> disk = getDisk(identifier);
+
+        return disk.orElseGet(() -> {
+            StorageDisk newDisk = new StorageDisk(drive, identifier, slot);
+            addDisk(newDisk);
+            return newDisk;
+        });
     }
 
     public static StorageDisk getOrGetDisk(Drive drive, UUID uuid) {
@@ -105,17 +131,28 @@ public class NetworkManager {
     }
 
     public static void saveAll() {
-        networks.forEach(Network::onSave);
-        disks.forEach(StorageDisk::save);
+        Restored.getDatabase().getMiddleware().getAllCachedNetworks().forEach(Network::onSave);
+        Restored.getDatabase().getMiddleware().getAllCachedDisks().forEach(StorageDisk::save);
     }
 
     public static void clearAll() {
-        networks.clear();
-        disks.clear();
+        // No longer needed as middleware handles it, but kept for compatibility
+    }
+
+    public static ConcurrentSkipListSet<Network> getNetworks() {
+        return new ConcurrentSkipListSet<>(Restored.getDatabase().getMiddleware().getAllCachedNetworks());
+    }
+
+    public static ConcurrentSkipListSet<StorageDisk> getDisks() {
+        return new ConcurrentSkipListSet<>(Restored.getDatabase().getMiddleware().getAllCachedDisks());
     }
 
     public static void onShutdown() {
         saveAll();
+        
+        // Flush the database middleware to ensure all pending operations are executed
+        Restored.getDatabase().getMiddleware().flush();
+        
         clearAll();
     }
 
@@ -182,52 +219,55 @@ public class NetworkManager {
     }
 
     public static Optional<Network> getNetworkAt(Block block) {
-        return Restored.getBlockMap().getNetworkAtBlock(block);
+        return getNetworkBlockAt(block).flatMap(NetworkBlock::getNetwork);
     }
 
     public static void saveNetworkBlockAt(NetworkBlock networkBlock) {
-        saveDataBlockAt(networkBlock.getDataBlock());
+        networkBlock.onSave();
     }
 
     public static void removeNetworkedBlock(Block block) {
-        removeDataBlockAt(block);
+        getNetworkBlockAt(block).ifPresent(NetworkBlock::clean);
     }
 
-    public static Optional<DataBlock> getDataBlockAt(Block block) {
-        return Restored.getBlockMap().getDataBlockAt(block);
+    public static Optional<NetworkBlock> getNetworkBlockAt(Block block) {
+        return NetworkMap.getLocatedBlock(gg.drak.restored.data.blocks.BlockLocation.of(block)).flatMap(locatedBlock -> {
+            return NetworkManager.getOrGetNetwork(locatedBlock.getNetwork()).flatMap(network -> createNetworkBlock(network, locatedBlock));
+        });
     }
 
-    public static Optional<DataBlock> getDataBlockAt(Block block, Network network) {
-        return Restored.getBlockMap().getDataBlockAt(block, network);
-    }
-
-    public static void saveDataBlockAt(DataBlock dataBlock) {
-        Restored.getBlockMap().saveBlock(dataBlock);
-    }
-
-    public static void removeDataBlockAt(Block block) {
-        Restored.getBlockMap().removeBlock(block);
+    public static Optional<NetworkBlock> createNetworkBlock(Network network, LocatedBlock locatedBlock) {
+        try {
+            com.google.gson.JsonObject data = new com.google.gson.Gson().fromJson(locatedBlock.getData(), com.google.gson.JsonObject.class);
+            NetworkBlock block = BlockType.getBlock(locatedBlock.getType(), UUID.fromString(locatedBlock.getIdentifier()), network, locatedBlock.getLocation().toLocation(), data);
+            return Optional.ofNullable(block);
+        } catch (Exception e) {
+            Restored.getInstance().logSevere("Failed to create NetworkBlock instance for " + locatedBlock.getIdentifier(), e);
+            return Optional.empty();
+        }
     }
 
     public static void onBreakBlock(BlockBreakEvent event) {
         Player player = event.getPlayer();
         Block block = event.getBlock();
 
-        Optional<Network> optionalNetwork = NetworkManager.getNetworkAt(block);
-        if (optionalNetwork.isEmpty()) return;
+        Optional<NetworkBlock> optionalNetworkBlock = getNetworkBlockAt(block);
+        if (optionalNetworkBlock.isEmpty()) return;
 
-        Network network = optionalNetwork.get();
-        if (! network.hasPermission(player, PermissionNode.NETWORK_BREAK)) {
-            Sender sender = new Sender(player);
-            sender.sendMessage("&cYou do not have permission to break this block!");
+        NetworkBlock networkBlock = optionalNetworkBlock.get();
+        Optional<Network> optionalNetwork = networkBlock.getNetwork();
+        if (optionalNetwork.isPresent()) {
+            Network network = optionalNetwork.get();
+            if (! network.hasPermission(player, PermissionNode.NETWORK_BREAK)) {
+                Sender sender = new Sender(player);
+                sender.sendMessage("&cYou do not have permission to break this block!");
 
-            event.setCancelled(true);
-            return;
+                event.setCancelled(true);
+                return;
+            }
         }
 
-        network.onBlockBreak(event);
-
-        removeDataBlockAt(block);
+        networkBlock.onBreak(event);
     }
 
     public static void onBlockClick(PlayerInteractEvent event) {
@@ -240,52 +280,29 @@ public class NetworkManager {
         Action action = event.getAction();
         if (action != Action.RIGHT_CLICK_BLOCK) return;
 
-        Optional<Network> optionalNetwork = getNetworkAt(block);
-        if (optionalNetwork.isEmpty()) {
-            Restored.getInstance().logInfo("No network found at block...");
-            Optional<NetworkBlock> optionalNetworkBlock = getNetworkBlockAt(block);
-            if (optionalNetworkBlock.isEmpty()) {
-                Restored.getInstance().logInfo("No network or network block found at block...");
+        Optional<NetworkBlock> optionalNetworkBlock = getNetworkBlockAt(block);
+        if (optionalNetworkBlock.isEmpty()) return;
+
+        NetworkBlock networkBlock = optionalNetworkBlock.get();
+        Optional<Network> optionalNetwork = networkBlock.getNetwork();
+        
+        if (optionalNetwork.isPresent()) {
+            Network network = optionalNetwork.get();
+            if (! network.hasPermission(player, PermissionNode.NETWORK_ACCESS)) {
+                Sender sender = new Sender(player);
+                sender.sendMessage("&cYou do not have permission to access this network!");
+
+                event.setCancelled(true);
                 return;
             }
-
-            NetworkBlock networkBlock = optionalNetworkBlock.get();
-
-            networkBlock.onRightClick(player);
-            event.setCancelled(true);
-
-            return;
-        } else {
-            Restored.getInstance().logInfo("Network found at block...");
         }
 
-        Network network = optionalNetwork.get();
-        if (! network.hasPermission(player, PermissionNode.NETWORK_ACCESS)) {
-            Sender sender = new Sender(player);
-            sender.sendMessage("&cYou do not have permission to access this network!");
-
-            event.setCancelled(true);
-            return;
-        }
-
-        network.onBlockClick(event);
-
+        networkBlock.onRightClick(player);
         event.setCancelled(true);
-    }
-
-    private static Optional<NetworkBlock> getNetworkBlockAt(Block block) {
-        Optional<DataBlock> optionalDataBlock = Restored.getBlockMap().getDataBlockAt(block);
-        if (optionalDataBlock.isEmpty()) return Optional.empty();
-
-        DataBlock dataBlock = optionalDataBlock.get();
-
-        return dataBlock.getNetworkBlock();
     }
 
     public static void onBlockPlace(BlockPlaceEvent event) {
         if (event.isCancelled()) return;
-
-        Restored.getInstance().logInfo("Handling block placement for " + NetworkManager.class.getSimpleName() + "...");
 
         Block block = event.getBlockAgainst();
         if (block == null) return;
@@ -295,7 +312,6 @@ public class NetworkManager {
 
         Optional<RestoredItem> optional = ItemManager.readItem(item);
         if (optional.isEmpty()) {
-            Restored.getInstance().logInfo("Item is null...");
             return;
         }
         RestoredItem restoredItem = optional.get();
@@ -333,7 +349,13 @@ public class NetworkManager {
     }
 
     public static ConcurrentSkipListSet<String> getOwnedNetworkUuids(Player player) {
-        return Restored.getNetworkMapConfig().getOwnedNetworks(player.getUniqueId().toString());
+        ConcurrentSkipListSet<String> uuids = new ConcurrentSkipListSet<>();
+        for (SingleNetworkMap map : NetworkMap.getNetworkMaps()) {
+            if (map.getOwnerUUID().equalsIgnoreCase(player.getUniqueId().toString())) {
+                uuids.add(map.getIdentifier());
+            }
+        }
+        return uuids;
     }
 
     public static ConcurrentSkipListSet<Network> getOwnedNetworks(Player player) {
@@ -348,7 +370,11 @@ public class NetworkManager {
     }
 
     public static ConcurrentSkipListSet<String> getAllNetworkUuids() {
-        return Restored.getNetworkMapConfig().getNetworkIdentifiers();
+        ConcurrentSkipListSet<String> uuids = new ConcurrentSkipListSet<>();
+        for (SingleNetworkMap map : NetworkMap.getNetworkMaps()) {
+            uuids.add(map.getIdentifier());
+        }
+        return uuids;
     }
 
     public static CompletableFuture<ConcurrentSkipListSet<Network>> getAllNetworks() {

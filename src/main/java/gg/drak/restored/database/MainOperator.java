@@ -1,6 +1,8 @@
 package gg.drak.restored.database;
 
 import gg.drak.restored.Restored;
+import gg.drak.restored.data.blocks.LocatedBlock;
+import gg.drak.restored.data.blocks.SingleNetworkMap;
 import gg.drak.restored.database.dao.*;
 import host.plas.bou.sql.DBOperator;
 import lombok.Getter;
@@ -12,18 +14,20 @@ import lombok.Getter;
  */
 @Getter
 public class MainOperator extends DBOperator {
-    private final DataBlockDAO dataBlockDAO;
     private final NetworkDAO networkDAO;
     private final NetworkBlockDAO networkBlockDAO;
     private final DiskDAO diskDAO;
     private final PermissionDAO permissionDAO;
     private final FilterDAO filterDAO;
+    private final DatabaseMiddleware middleware;
     
     public MainOperator() {
         super(Restored.getDatabaseConfig().getConnectorSet(), Restored.getInstance());
         
+        // Initialize Middleware
+        this.middleware = new DatabaseMiddleware(this);
+
         // Initialize DAOs
-        this.dataBlockDAO = new DataBlockDAO(this);
         this.networkDAO = new NetworkDAO(this);
         this.networkBlockDAO = new NetworkBlockDAO(this);
         this.diskDAO = new DiskDAO(this);
@@ -37,6 +41,20 @@ public class MainOperator extends DBOperator {
             String s1 = Statements.getStatement(Statements.StatementType.CREATE_TABLES, getConnectorSet());
 
             execute(s1, stmt -> {});
+
+            // Migration: Ensure DriveId and Slot columns exist in Disks table
+            try {
+                if (getConnectorSet().getType() == host.plas.bou.sql.DatabaseType.MYSQL) {
+                    execute("ALTER TABLE `" + getConnectorSet().getTablePrefix() + "Disks` ADD COLUMN IF NOT EXISTS DriveId VARCHAR(255) DEFAULT NULL AFTER Identifier;", stmt -> {});
+                    execute("ALTER TABLE `" + getConnectorSet().getTablePrefix() + "Disks` ADD COLUMN IF NOT EXISTS Slot INTEGER AFTER DriveId;", stmt -> {});
+                } else {
+                    // SQLite doesn't support ADD COLUMN IF NOT EXISTS easily, but we can try and ignore errors
+                    try { execute("ALTER TABLE `" + getConnectorSet().getTablePrefix() + "Disks` ADD COLUMN DriveId TEXT DEFAULT NULL;", stmt -> {}); } catch (Exception ignored) {}
+                    try { execute("ALTER TABLE `" + getConnectorSet().getTablePrefix() + "Disks` ADD COLUMN Slot INTEGER;", stmt -> {}); } catch (Exception ignored) {}
+                }
+            } catch (Exception e) {
+                // Ignore errors if columns already exist
+            }
         } catch (Exception e) {
             Restored.getInstance().logSevere("Failed to ensure database tables", e);
         }
@@ -51,5 +69,33 @@ public class MainOperator extends DBOperator {
         } catch (Exception e) {
             Restored.getInstance().logSevere("Failed to ensure database", e);
         }
+    }
+
+    public java.util.concurrent.ConcurrentSkipListSet<SingleNetworkMap> getNetworkMaps() {
+        java.util.concurrent.ConcurrentSkipListSet<SingleNetworkMap> maps = new java.util.concurrent.ConcurrentSkipListSet<>();
+
+        for (NetworkDAO.NetworkData data : networkDAO.getAll()) {
+            getNetworkMap(data.getIdentifier()).ifPresent(maps::add);
+        }
+
+        return maps;
+    }
+
+    public java.util.Optional<SingleNetworkMap> getNetworkMap(String identifier) {
+        return networkDAO.getById(identifier).map(data -> {
+            java.util.List<NetworkBlockDAO.NetworkBlockData> blocks = networkBlockDAO.getByNetworkId(identifier);
+            java.util.concurrent.ConcurrentSkipListSet<LocatedBlock> locatedBlocks = new java.util.concurrent.ConcurrentSkipListSet<>();
+
+            for (NetworkBlockDAO.NetworkBlockData blockData : blocks) {
+                locatedBlocks.add(new LocatedBlock(blockData.getIdentifier(), blockData.getNetworkId(), blockData.getBlockType(), blockData.asBlockLocation(), blockData.getData()));
+            }
+
+            return new SingleNetworkMap(data.getIdentifier(), data.getOwnerUuid(), locatedBlocks);
+        });
+    }
+
+    public void saveNetworkMap(SingleNetworkMap singleNetworkMap) {
+        networkDAO.insert(singleNetworkMap.getIdentifier(), singleNetworkMap.getOwnerUUID());
+        // Blocks are saved individually by NetworkBlock.onSave()
     }
 }

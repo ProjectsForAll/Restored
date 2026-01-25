@@ -5,9 +5,7 @@ import gg.drak.restored.database.MainOperator;
 import host.plas.bou.BetterPlugin;
 import gg.drak.restored.commands.GetItemCMD;
 import gg.drak.restored.commands.NetworkPermissionsCMD;
-import gg.drak.restored.config.BlockMap;
 import gg.drak.restored.config.MainConfig;
-import gg.drak.restored.config.NetworkMapConfig;
 import gg.drak.restored.data.Network;
 import gg.drak.restored.data.NetworkManager;
 import gg.drak.restored.data.blocks.NetworkMap;
@@ -26,11 +24,7 @@ public final class Restored extends BetterPlugin {
     @Getter @Setter
     private static MainConfig mainConfig;
     @Getter @Setter
-    private static BlockMap blockMap;
-    @Getter @Setter
     private static MainListener mainListener;
-    @Getter @Setter
-    private static NetworkMapConfig networkMapConfig;
 
     @Getter @Setter
     private static GetItemCMD getItemCMD;
@@ -55,8 +49,6 @@ public final class Restored extends BetterPlugin {
         setInstance(this);
 
         setMainConfig(new MainConfig());
-        setBlockMap(new BlockMap());
-        setNetworkMapConfig(new NetworkMapConfig());
         setDatabaseConfig(new DatabaseConfig());
         setDatabase(new MainOperator());
         getDatabase().ensureDatabase();

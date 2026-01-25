@@ -14,16 +14,18 @@ public class LocatedBlock implements Identifiable {
 
     private BlockType type;
     private BlockLocation location;
+    private String data;
 
-    public LocatedBlock(String identifier, String network, BlockType type, BlockLocation location) {
+    public LocatedBlock(String identifier, String network, BlockType type, BlockLocation location, String data) {
         this.identifier = identifier;
         this.network = network;
         this.type = type;
         this.location = location;
+        this.data = data;
     }
 
     public LocatedBlock(NetworkBlock block) {
-        this(block.getIdentifier(), getNetworkIdentifier(block), block.getType(), BlockLocation.of(block.getLocation()));
+        this(block.getIdentifier(), getNetworkIdentifier(block), block.getType(), block.getBlockLocation(), block.getData().toString());
     }
 
     public boolean equals(LocatedBlock locatedBlock) {
