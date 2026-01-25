@@ -335,7 +335,7 @@ public class CraftingViewer extends NetworkBlock implements InventoryBlock {
 
     private void useLastFilter(Player player) {
         try {
-            Optional<String> lastFilter = DatabaseManager.getInstance().getFilterDAO().getLastFilter(player.getUniqueId().toString());
+            Optional<String> lastFilter = Restored.getDatabase().getFilterDAO().getLastFilter(player.getUniqueId().toString());
             if (lastFilter.isPresent() && !lastFilter.get().isEmpty()) {
                 currentFilter = lastFilter.get();
                 savePlayerFilter(player, currentFilter);
@@ -348,7 +348,7 @@ public class CraftingViewer extends NetworkBlock implements InventoryBlock {
 
     private void loadPlayerFilter(Player player) {
         try {
-            Optional<String> filter = DatabaseManager.getInstance().getFilterDAO().getLastFilter(player.getUniqueId().toString());
+            Optional<String> filter = Restored.getDatabase().getFilterDAO().getLastFilter(player.getUniqueId().toString());
             currentFilter = filter.orElse(null);
         } catch (Exception e) {
             Restored.getInstance().logSevere("Failed to load filter for player: " + player.getName(), e);
@@ -358,9 +358,9 @@ public class CraftingViewer extends NetworkBlock implements InventoryBlock {
     private void savePlayerFilter(Player player, String filter) {
         try {
             if (filter == null || filter.isEmpty()) {
-                DatabaseManager.getInstance().getFilterDAO().clearFilter(player.getUniqueId().toString());
+                Restored.getDatabase().getFilterDAO().clearFilter(player.getUniqueId().toString());
             } else {
-                DatabaseManager.getInstance().getFilterDAO().setFilter(player.getUniqueId().toString(), filter);
+                Restored.getDatabase().getFilterDAO().setFilter(player.getUniqueId().toString(), filter);
             }
         } catch (Exception e) {
             Restored.getInstance().logSevere("Failed to save filter for player: " + player.getName(), e);

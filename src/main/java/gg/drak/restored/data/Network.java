@@ -17,6 +17,7 @@ import gg.drak.restored.data.permission.PermissionNode;
 import gg.drak.restored.data.permission.PermissionSystem;
 import gg.drak.restored.data.screens.items.StoredItem;
 import gg.drak.restored.data.screens.items.ViewerPage;
+import gg.drak.restored.database.dao.PermissionDAO;
 import lombok.Getter;
 import lombok.Setter;
 import org.bukkit.Bukkit;
@@ -35,7 +36,7 @@ import java.util.concurrent.ConcurrentSkipListSet;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 @Getter @Setter
-public class Network {
+public class Network implements Comparable<Network> {
     private String identifier; // in UUID format
     private String ownerUuid; // Owner of the network
     private Controller controller; // Location of the start of the network
@@ -63,7 +64,7 @@ public class Network {
         
         // Save to database
         try {
-            DatabaseManager.getInstance().getNetworkDAO().insert(identifier, ownerUuid);
+            Restored.getDatabase().getNetworkDAO().insert(identifier, ownerUuid);
         } catch (SQLException e) {
             Restored.getInstance().logSevere("Failed to save network to database: " + identifier, e);
         }
@@ -84,10 +85,10 @@ public class Network {
     public void init() {
         // Load permission system from database
         try {
-            List<gg.drak.restored.database.PermissionDAO.PermissionData> permissions = 
-                    DatabaseManager.getInstance().getPermissionDAO().getByNetworkId(identifier);
+            List<PermissionDAO.PermissionData> permissions = 
+                    Restored.getDatabase().getPermissionDAO().getByNetworkId(identifier);
             
-            for (gg.drak.restored.database.PermissionDAO.PermissionData perm : permissions) {
+            for (PermissionDAO.PermissionData perm : permissions) {
                 if (perm.getValue()) {
                     permissionSystem.trust(
                             perm.getPermissionNode(),
@@ -355,13 +356,13 @@ public class Network {
         // Save permission system to database
         try {
             // Clear existing permissions
-            DatabaseManager.getInstance().getPermissionDAO().removeAllPermissions(identifier);
+            Restored.getDatabase().getPermissionDAO().removeAllPermissions(identifier);
             
             // Save current permissions
             permissionSystem.getTrusted().forEach((node, uuids) -> {
                 for (String uuid : uuids) {
                     try {
-                        DatabaseManager.getInstance().getPermissionDAO().setPermission(identifier, uuid, node, true);
+                        Restored.getDatabase().getPermissionDAO().setPermission(identifier, uuid, node, true);
                     } catch (SQLException e) {
                         Restored.getInstance().logSevere("Failed to save permission for network: " + identifier, e);
                     }
@@ -443,14 +444,22 @@ public class Network {
         
         // Delete from database
         try {
-            DatabaseManager.getInstance().getNetworkDAO().delete(identifier);
-            DatabaseManager.getInstance().getNetworkBlockDAO().deleteByNetworkId(identifier);
-            DatabaseManager.getInstance().getPermissionDAO().removeAllPermissions(identifier);
+            Restored.getDatabase().getNetworkDAO().delete(identifier);
+            Restored.getDatabase().getNetworkBlockDAO().deleteByNetworkId(identifier);
+            Restored.getDatabase().getPermissionDAO().removeAllPermissions(identifier);
         } catch (SQLException e) {
             Restored.getInstance().logSevere("Failed to delete network from database: " + identifier, e);
         }
         
         // Unload from manager
         NetworkManager.unloadNetwork(this);
+    }
+    
+    @Override
+    public int compareTo(Network other) {
+        if (other == null) {
+            return 1;
+        }
+        return this.identifier.compareTo(other.identifier);
     }
 }

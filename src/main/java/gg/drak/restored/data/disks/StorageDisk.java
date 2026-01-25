@@ -5,6 +5,7 @@ import host.plas.bou.utils.ColorUtils;
 import gg.drak.restored.Restored;
 import gg.drak.restored.data.blocks.impl.Drive;
 import gg.drak.restored.data.screens.items.StoredItem;
+import gg.drak.restored.database.dao.DiskDAO;
 import lombok.Getter;
 import lombok.Setter;
 import org.bukkit.Material;
@@ -43,7 +44,7 @@ public class StorageDisk implements Identifiable {
 
     public void buildOrGetSettings() {
         try {
-            Optional<DiskDAO.DiskData> dataOpt = DatabaseManager.getInstance().getDiskDAO().getById(identifier);
+            Optional<DiskDAO.DiskData> dataOpt = Restored.getDatabase().getDiskDAO().getById(identifier);
             
             if (dataOpt.isPresent()) {
                 DiskDAO.DiskData data = dataOpt.get();
@@ -65,7 +66,7 @@ public class StorageDisk implements Identifiable {
 
     public void save() {
         try {
-            DatabaseManager.getInstance().getDiskDAO().insert(identifier, capacity, contents);
+            Restored.getDatabase().getDiskDAO().insert(identifier, capacity, contents);
         } catch (SQLException e) {
             Restored.getInstance().logSevere("Failed to save disk: " + identifier, e);
         }
