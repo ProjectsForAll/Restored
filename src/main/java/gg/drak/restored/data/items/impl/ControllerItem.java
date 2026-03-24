@@ -113,6 +113,9 @@ public class ControllerItem extends RestoredItem implements IPlaceable {
 
     @Override
     public void placeAsBlock(Block atBlock, Player placedBy) {
-        atBlock.setType(Material.IRON_BLOCK);
+        // Block is already placed by BlockPlaceEvent with correct type and facing.
+        if (atBlock.getType() != Material.IRON_BLOCK) {
+            atBlock.setType(Material.IRON_BLOCK);
+        }
     }
 }

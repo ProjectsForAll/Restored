@@ -1,10 +1,14 @@
 package gg.drak.restored.data.blocks;
 
 import com.google.gson.JsonObject;
+import host.plas.bou.gui.InventorySheet;
+import host.plas.bou.gui.ScreenManager;
+import host.plas.bou.gui.screens.ScreenInstance;
 import host.plas.bou.gui.screens.blocks.ScreenBlock;
+import host.plas.bou.gui.screens.events.BlockOpenEvent;
+import host.plas.bou.gui.screens.events.BlockRedrawEvent;
 import gg.drak.restored.Restored;
 import gg.drak.restored.data.Network;
-import gg.drak.restored.data.NetworkManager;
 import gg.drak.restored.data.blocks.impl.Controller;
 import gg.drak.restored.data.items.RestoredItem;
 import lombok.Getter;
@@ -12,6 +16,7 @@ import lombok.Setter;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.block.Block;
+import org.bukkit.entity.Player;
 import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.inventory.ItemStack;
 import org.jetbrains.annotations.Nullable;
@@ -166,5 +171,37 @@ public abstract class NetworkBlock extends ScreenBlock {
 
     public BlockLocation getBlockLocation() {
         return location;
+    }
+
+    @Override
+    public ScreenInstance buildScreen(BlockOpenEvent event) {
+        Player player = event.getPlayer();
+        ScreenBlock block = event.getScreenBlock();
+        InventorySheet inventorySheet = buildInventorySheet(player, block);
+        ScreenInstance instance = createScreenInstance(player, inventorySheet);
+        instance.setBlock(block);
+        instance.setTitle(buildTitle(player, block));
+        return instance;
+    }
+
+    /**
+     * Subclasses (e.g. crafting viewer) may return a {@link ScreenInstance} that allows placement into specific slots.
+     */
+    protected ScreenInstance createScreenInstance(Player player, InventorySheet inventorySheet) {
+        return new ScreenInstance(player, getType(), inventorySheet);
+    }
+
+    @Override
+    public void onRedraw(BlockRedrawEvent event) {
+        ScreenBlock block = event.getScreenBlock();
+        if (! block.getIdentifier().equals(getIdentifier())) return;
+
+        ScreenManager.getPlayersOf(block).forEach(screenInstance -> {
+            Player player = screenInstance.getPlayer();
+            InventorySheet fresh = buildInventorySheet(player, this);
+            screenInstance.setInventorySheet(fresh);
+            screenInstance.redraw();
+            screenInstance.setBlock(this);
+        });
     }
 }

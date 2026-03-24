@@ -2,6 +2,7 @@ package gg.drak.restored.data.blocks.impl;
 
 import host.plas.bou.commands.Sender;
 import host.plas.bou.gui.InventorySheet;
+import host.plas.bou.gui.icons.BasicIcon;
 import host.plas.bou.gui.screens.blocks.ScreenBlock;
 import host.plas.bou.utils.ColorUtils;
 import gg.drak.restored.Restored;
@@ -47,7 +48,8 @@ public class Controller extends NetworkBlock {
 
         InventorySheet sheet = new InventorySheet(getType().getSlots());
 
-        sheet.addIcon(4, getMainIcon(player, block));
+        // Center of 3×9 chest rows (slot 13)
+        sheet.setIcon(13, getMainIcon(player, block));
 
         return sheet;
     }
@@ -55,7 +57,7 @@ public class Controller extends NetworkBlock {
     public Icon getMainIcon(Player player, ScreenBlock block) {
         ItemStack stack = new ItemStack(Material.NETHER_STAR);
 
-        Icon icon = new Icon(stack);
+        Icon icon = new BasicIcon(stack);
 
         icon.setName(ColorUtils.colorizeHard("&bController Heart"));
         icon.setLore(getMainIconLore(player, block));

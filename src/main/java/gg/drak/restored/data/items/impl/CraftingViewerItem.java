@@ -43,6 +43,9 @@ public class CraftingViewerItem extends RestoredItem implements IPlaceable {
 
     @Override
     public void placeAsBlock(Block atBlock, Player placedBy) {
-        atBlock.setType(Material.CRAFTING_TABLE);
+        // Block is already placed by BlockPlaceEvent with correct type and facing.
+        if (atBlock.getType() != Material.CRAFTING_TABLE) {
+            atBlock.setType(Material.CRAFTING_TABLE);
+        }
     }
 }

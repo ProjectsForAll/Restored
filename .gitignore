@@ -123,3 +123,10 @@ run/
 /.fastRequest/
 
 bin/
+
+# AI
+.claude/
+.cursor/
+.deploy/
+
+CLAUDE.md

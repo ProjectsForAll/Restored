@@ -171,7 +171,7 @@ public class DiskDAO {
     }
     
     /**
-     * Serialize items to JSON string.
+     * Serialize items to JSON string using Gson.
      * Format: [{"identifier":"uuid","amount":"123","itemData":"serialized"}]
      */
     private String serializeItems(ConcurrentSkipListSet<StoredItem> items) {
@@ -180,8 +180,7 @@ public class DiskDAO {
                 return "[]";
             }
 
-            StringBuilder sb = new StringBuilder("[");
-            boolean first = true;
+            com.google.gson.JsonArray array = new com.google.gson.JsonArray();
 
             for (StoredItem item : items) {
                 ItemData itemData = item.toData();
@@ -191,153 +190,53 @@ public class DiskDAO {
                     continue;
                 }
 
-                if (!first) {
-                    sb.append(",");
-                }
-                first = false;
-
-                String itemDataStr = escapeJson(data);
-                String identifier = escapeJson(item.getIdentifier());
-                String amount = item.getAmount().toString();
-
-                sb.append("{")
-                        .append("\"identifier\":\"").append(identifier).append("\",")
-                        .append("\"amount\":\"").append(amount).append("\",")
-                        .append("\"itemData\":\"").append(itemDataStr).append("\"")
-                        .append("}");
+                com.google.gson.JsonObject obj = new com.google.gson.JsonObject();
+                obj.addProperty("identifier", item.getIdentifier());
+                obj.addProperty("amount", item.getAmount().toString());
+                obj.addProperty("itemData", data);
+                array.add(obj);
             }
 
-            sb.append("]");
-            return sb.toString();
+            return array.toString();
         } catch (Exception e) {
             Restored.getInstance().logWarning("Failed to serialize disk items to JSON", e);
             return "[]";
         }
     }
-    
+
     /**
-     * Deserialize items from JSON string.
+     * Deserialize items from JSON string using Gson.
      */
     private ConcurrentSkipListSet<StoredItem> deserializeItems(String json) {
-        try {
-            ConcurrentSkipListSet<StoredItem> items = new ConcurrentSkipListSet<>();
+        ConcurrentSkipListSet<StoredItem> items = new ConcurrentSkipListSet<>();
 
-            if (json == null || json.isEmpty() || json.trim().equals("[]")) {
-                return items;
-            }
-
-            try {
-                // Simple JSON parsing - find each object in the array
-                json = json.trim();
-                if (!json.startsWith("[") || !json.endsWith("]")) {
-                    Restored.getInstance().logWarning("Invalid JSON format for disk items: " + json);
-                    return items;
-                }
-
-                String content = json.substring(1, json.length() - 1).trim();
-                if (content.isEmpty()) {
-                    return items;
-                }
-
-                // Parse objects by finding balanced braces
-                int depth = 0;
-                int start = -1;
-                for (int i = 0; i < content.length(); i++) {
-                    char c = content.charAt(i);
-                    if (c == '{') {
-                        if (depth == 0) {
-                            start = i;
-                        }
-                        depth++;
-                    } else if (c == '}') {
-                        depth--;
-                        if (depth == 0 && start != -1) {
-                            String objStr = content.substring(start, i + 1);
-                            parseItemObject(objStr, items);
-                            start = -1;
-                        }
-                    }
-                }
-            } catch (Exception e) {
-                Restored.getInstance().logWarning("Failed to deserialize disk items from JSON: " + json, e);
-            }
-
+        if (json == null || json.isEmpty() || json.trim().equals("[]")) {
             return items;
-        } catch (Exception e) {
-            Restored.getInstance().logWarning("Failed to deserialize disk items from JSON", e);
-            return new ConcurrentSkipListSet<>();
         }
-    }
-    
-    /**
-     * Parse a single JSON object and add it to the items set.
-     */
-    private void parseItemObject(String objStr, ConcurrentSkipListSet<StoredItem> items) {
+
         try {
-            String identifier = extractJsonValue(objStr, "identifier");
-            String amountStr = extractJsonValue(objStr, "amount");
-            String itemDataStr = extractJsonValue(objStr, "itemData");
-            
-            if (identifier != null && amountStr != null && itemDataStr != null) {
-                BigInteger amount = new BigInteger(amountStr);
-                ItemData itemData = new ItemData(identifier, amount, itemDataStr);
-                StoredItem item = new StoredItem(itemData);
-                items.add(item);
+            com.google.gson.JsonArray array = com.google.gson.JsonParser.parseString(json).getAsJsonArray();
+
+            for (com.google.gson.JsonElement element : array) {
+                try {
+                    com.google.gson.JsonObject obj = element.getAsJsonObject();
+                    String identifier = obj.get("identifier").getAsString();
+                    String amountStr = obj.get("amount").getAsString();
+                    String itemDataStr = obj.get("itemData").getAsString();
+
+                    BigInteger amount = new BigInteger(amountStr);
+                    ItemData itemData = new ItemData(identifier, amount, itemDataStr);
+                    StoredItem item = new StoredItem(itemData);
+                    items.add(item);
+                } catch (Exception e) {
+                    Restored.getInstance().logWarning("Failed to parse item element: " + element, e);
+                }
             }
         } catch (Exception e) {
-            Restored.getInstance().logWarning("Failed to parse item object: " + objStr, e);
+            Restored.getInstance().logWarning("Failed to deserialize disk items from JSON: " + json, e);
         }
-    }
-    
-    /**
-     * Extract a JSON value from a JSON object string.
-     */
-    private String extractJsonValue(String json, String key) {
-        try {
-            String searchKey = "\"" + key + "\":\"";
-            int startIdx = json.indexOf(searchKey);
-            if (startIdx == -1) {
-                return null;
-            }
-            
-            startIdx += searchKey.length();
-            int endIdx = json.indexOf("\"", startIdx);
-            if (endIdx == -1) {
-                return null;
-            }
-            
-            return unescapeJson(json.substring(startIdx, endIdx));
-        } catch (Exception e) {
-            return null;
-        }
-    }
-    
-    /**
-     * Escape JSON special characters.
-     */
-    private String escapeJson(String str) {
-        if (str == null) {
-            return "";
-        }
-        return str.replace("\\", "\\\\")
-                  .replace("\"", "\\\"")
-                  .replace("\n", "\\n")
-                  .replace("\r", "\\r")
-                  .replace("\t", "\\t");
-    }
-    
-    /**
-     * Unescape JSON special characters.
-     */
-    private String unescapeJson(String str) {
-        if (str == null) {
-            return "";
-        }
-        return str.replace("\\\"", "\"")
-                  .replace("\\\\", "\\")
-                  .replace("\\n", "\n")
-                  .replace("\\r", "\r")
-                  .replace("\\t", "\t");
+
+        return items;
     }
     
     @Getter

@@ -248,38 +248,49 @@ public class Network implements Comparable<Network> {
         return false;
     }
 
-    public boolean insert(ItemStack stack) {
+    /**
+     * Insert items into the network's disks.
+     * @return the number of items that could NOT be inserted (0 = all inserted).
+     */
+    public int insertItems(ItemStack stack) {
         if (stack == null || stack.getType().isAir()) {
-            return false;
+            return stack == null ? 0 : stack.getAmount();
         }
-        
+
         ConcurrentSkipListSet<StorageDisk> disks = getDisks();
         if (disks.isEmpty()) {
-            return false;
+            return stack.getAmount();
         }
-        
+
         ItemStack remaining = stack.clone();
-        int originalAmount = stack.getAmount();
-        
+
         for (StorageDisk disk : disks) {
             if (remaining.getAmount() <= 0) {
                 break;
             }
-            
+
             if (! disk.isFull()) {
                 BigInteger leftover = disk.addItem(remaining);
                 disk.save();
-                
+
                 if (leftover.compareTo(BigInteger.ZERO) <= 0) {
                     remaining.setAmount(0);
                     break;
                 }
-                
+
                 remaining.setAmount(leftover.intValue());
             }
         }
-        
-        return remaining.getAmount() < originalAmount;
+
+        return remaining.getAmount();
+    }
+
+    public boolean insert(ItemStack stack) {
+        if (stack == null || stack.getType().isAir()) {
+            return false;
+        }
+        int leftover = insertItems(stack);
+        return leftover < stack.getAmount();
     }
 
     public boolean canInsertOne(ItemStack stack) {
@@ -320,16 +331,20 @@ public class Network implements Comparable<Network> {
     }
 
     public Optional<ViewerPage> getPage(int pageIndex) {
+        return getPage(pageIndex, 45);
+    }
+
+    public Optional<ViewerPage> getPage(int pageIndex, int itemsPerPage) {
         if (pageIndex < 1) {
             return Optional.empty();
         }
-        
+
         List<StoredItem> allItems = new ArrayList<>();
-        
+
         getDisks().forEach(disk -> {
             allItems.addAll(disk.getContents());
         });
-        
+
         // Remove duplicates by combining items with the same type
         Map<ItemStack, StoredItem> itemMap = new HashMap<>();
         for (StoredItem item : allItems) {
@@ -339,21 +354,24 @@ public class Network implements Comparable<Network> {
                 return new StoredItem(existing.getIdentifier(), combinedAmount, existing.getItem());
             });
         }
-        
+
         List<StoredItem> uniqueItems = new ArrayList<>(itemMap.values());
-        
-        int itemsPerPage = 45; // 5 rows * 9 columns
+
+        if (uniqueItems.isEmpty()) {
+            return Optional.empty();
+        }
+
         int totalPages = (int) Math.ceil((double) uniqueItems.size() / itemsPerPage);
-        
+
         if (pageIndex > totalPages) {
             return Optional.empty();
         }
-        
+
         int startIndex = (pageIndex - 1) * itemsPerPage;
         int endIndex = Math.min(startIndex + itemsPerPage, uniqueItems.size());
-        
+
         List<StoredItem> pageItems = uniqueItems.subList(startIndex, endIndex);
-        
+
         return Optional.of(new ViewerPage(pageIndex, pageItems));
     }
 

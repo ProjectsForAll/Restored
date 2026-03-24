@@ -74,9 +74,6 @@ public class Drive extends NetworkBlock implements InventoryBlock {
             }
         });
         getData().add("disks", disksJson);
-        
-        // Log for debugging
-        Restored.getInstance().logInfo("Saved drive " + getIdentifier() + " with " + disks.size() + " disks.");
     }
 
     @Override

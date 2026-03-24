@@ -12,6 +12,7 @@ import gg.drak.restored.data.blocks.inventory.InventoryBlock;
 import org.bukkit.entity.HumanEntity;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
+import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.event.block.BlockPlaceEvent;
@@ -45,7 +46,11 @@ public class MainListener implements Listener {
         NetworkManager.onBlockPlace(event);
     }
 
-    @EventHandler
+    /**
+     * Runs at {@link EventPriority#HIGHEST} so Obliviate/ScreenInstance can mark the click cancelled first;
+     * we still apply network insert logic and cursor updates manually.
+     */
+    @EventHandler(priority = EventPriority.HIGHEST)
     public void onInsertItem(InventoryClickEvent event) {
         List<HumanEntity> viewers = event.getViewers();
         if (viewers.isEmpty()) return;
@@ -67,29 +72,33 @@ public class MainListener implements Listener {
         ScreenInstance screen = ScreenManager.getScreen(player).get(); // not null
 
         InventoryAction action = event.getAction();
-        
+
         // Handle placing items into the network inventory
         if (action == InventoryAction.PLACE_ONE || action == InventoryAction.PLACE_SOME || action == InventoryAction.PLACE_ALL || action == InventoryAction.SWAP_WITH_CURSOR) {
             Inventory inventory = event.getClickedInventory();
             if (inventory == null) return;
-            
+
             // If clicking in the top inventory (the network screen)
             if (screen.getInventory().equals(inventory)) {
-                handlePutItem(event, PutType.PLACE_ONE);
+                int slot = event.getRawSlot();
+                if (shouldSkipManualDeposit(screen, slot)) {
+                    return;
+                }
+                handlePutItem(event, PutType.CURSOR_PLACE, action);
                 event.setCancelled(true);
                 return;
             }
         }
-        
+
         // Handle shift-clicking from player inventory into network inventory
         ClickType type = event.getClick();
         if (type == ClickType.SHIFT_LEFT || type == ClickType.SHIFT_RIGHT) {
             Inventory inventory = event.getClickedInventory();
             if (inventory == null) return;
-            
+
             // If clicking in the bottom inventory (player inventory) and top is a network screen
             if (! screen.getInventory().equals(inventory)) {
-                handlePutItem(event, PutType.SHIFT_CLICK_FROM_OWN);
+                handlePutItem(event, PutType.SHIFT_CLICK_FROM_OWN, action);
                 event.setCancelled(true);
                 return;
             } else {
@@ -99,7 +108,22 @@ public class MainListener implements Listener {
         }
     }
 
-    public static void handlePutItem(InventoryClickEvent event, PutType type) {
+    /**
+     * Crafting grid must use vanilla placement; viewer pagination row is UI-only.
+     */
+    private static boolean shouldSkipManualDeposit(ScreenInstance screen, int rawSlot) {
+        return screen.getScreenBlock().map(block -> {
+            if (block instanceof CraftingViewer) {
+                return CraftingViewer.isCraftingSlot(rawSlot);
+            }
+            if (block instanceof Viewer) {
+                return rawSlot >= 45;
+            }
+            return false;
+        }).orElse(false);
+    }
+
+    public static void handlePutItem(InventoryClickEvent event, PutType type, InventoryAction action) {
         ConcurrentSkipListMap<Integer, Player> viewers = new ConcurrentSkipListMap<>();
         event.getViewers().forEach(viewer -> {
             if (! (viewer instanceof Player)) return;
@@ -131,12 +155,29 @@ public class MainListener implements Listener {
                             return;
                         } else {
                             switch (type) {
-                                case PLACE_ONE:
+                                case CURSOR_PLACE:
                                     ItemStack cursor = event.getCursor();
                                     if (cursor == null || cursor.getType().isAir()) return;
-                                    
-                                    ItemStack placeLeft = invBlock.tryAddItem(cursor);
-                                    event.setCursor(placeLeft);
+
+                                    ItemStack toInsert = cursor.clone();
+                                    if (action == InventoryAction.PLACE_ONE) {
+                                        toInsert.setAmount(1);
+                                    }
+
+                                    ItemStack afterInsert = invBlock.tryAddItem(toInsert);
+                                    int leftoverOnAttempt = afterInsert != null ? afterInsert.getAmount() : 0;
+                                    int inserted = toInsert.getAmount() - leftoverOnAttempt;
+                                    if (inserted <= 0) {
+                                        return;
+                                    }
+                                    int newCursorAmount = cursor.getAmount() - inserted;
+                                    if (newCursorAmount <= 0) {
+                                        event.setCursor(null);
+                                    } else {
+                                        ItemStack nextCursor = cursor.clone();
+                                        nextCursor.setAmount(newCursorAmount);
+                                        event.setCursor(nextCursor);
+                                    }
                                     break;
                                 case SHIFT_CLICK_FROM_OWN:
                                     ItemStack itemToShift = event.getCurrentItem();
@@ -172,9 +213,9 @@ public class MainListener implements Listener {
         });
     }
 
-    public  enum PutType {
+    public enum PutType {
         SHIFT_CLICK_FROM_OWN,
-        PLACE_ONE,
+        CURSOR_PLACE,
         ;
     }
 }

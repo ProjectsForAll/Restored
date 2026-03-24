@@ -151,7 +151,7 @@ public class Statements {
         
         GET_NETWORK("SELECT * FROM `%table_prefix%Networks` WHERE Identifier = ?;"),
         
-        INSERT_NETWORK_BLOCK("INSERT OR REPLACE INTO `%table_prefix%NetworkBlocks` (Identifier, NetworkId, BlockType) VALUES (?, ?, ?);"),
+        INSERT_NETWORK_BLOCK("INSERT OR REPLACE INTO `%table_prefix%NetworkBlocks` (Identifier, NetworkId, BlockType, Data) VALUES (?, ?, ?, ?);"),
         
         DELETE_NETWORK_BLOCK("DELETE FROM `%table_prefix%NetworkBlocks` WHERE Identifier = ?;"),
         

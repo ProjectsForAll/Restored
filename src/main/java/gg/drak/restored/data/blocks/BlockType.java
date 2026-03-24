@@ -11,7 +11,7 @@ import org.bukkit.Location;
 
 @Getter
 public enum BlockType implements GuiType {
-    CONTROLLER(9, "Controller"),
+    CONTROLLER(27, "Controller"),
     DRIVE(9, "Drive"),
     VIEWER(54, "Viewer"),
     CRAFTING_VIEWER(54, "Crafting Viewer"),

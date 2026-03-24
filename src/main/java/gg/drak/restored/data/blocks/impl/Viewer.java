@@ -28,7 +28,6 @@ import org.bukkit.persistence.PersistentDataContainer;
 import org.bukkit.persistence.PersistentDataType;
 
 import java.util.Optional;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 @Getter @Setter
@@ -57,54 +56,28 @@ public class Viewer extends NetworkBlock implements InventoryBlock {
             return stack;
         }
 
-        if (! canAddItem(stack)) {
+        Optional<Network> networkOpt = getNetwork();
+        if (networkOpt.isEmpty()) return stack;
+        Network network = networkOpt.get();
+
+        if (! network.canInsert(stack)) {
             return stack;
         }
 
-        ItemStack toAdd = stack.clone();
-        toAdd.setAmount(1);
-        
-        if (addItem(toAdd)) {
+        int originalAmount = stack.getAmount();
+        int leftover = network.insertItems(stack);
+
+        if (leftover < originalAmount) {
             redraw();
-
-            ItemStack r = stack.clone();
-            r.setAmount(stack.getAmount() - 1);
-            if (r.getAmount() <= 0) {
-                r = null;
-            }
-
-            return r;
         }
 
-        return stack;
-    }
+        if (leftover <= 0) {
+            return null;
+        }
 
-    public boolean canAddItem(ItemStack stack) {
-        AtomicBoolean canAdd = new AtomicBoolean(false);
-
-        getNetwork().ifPresent(network -> {
-            canAdd.set(network.canInsert(stack));
-        });
-
-        return canAdd.get();
-    }
-
-    public boolean addItem(ItemStack stack) {
-        AtomicBoolean added = new AtomicBoolean(false);
-
-        getNetwork().ifPresent(network -> {
-            added.set(network.insert(stack));
-
-            if (added.get()) {
-                network.getBlocks().forEach(block -> {
-                    if (block instanceof Drive) {
-                        redraw();
-                    }
-                });
-            }
-        });
-
-        return added.get();
+        ItemStack r = stack.clone();
+        r.setAmount(leftover);
+        return r;
     }
 
     @Override
@@ -158,10 +131,9 @@ public class Viewer extends NetworkBlock implements InventoryBlock {
 
         buildPage(sheet, page);
 
-        InventorySheet inventorySheet = buildInventorySheet(player, block);
         String title = buildTitle(player, block);
 
-        ScreenInstance screen = new ScreenInstance(player, this.getType(), inventorySheet);
+        ScreenInstance screen = createScreenInstance(player, sheet);
         screen.setTitle(title);
         screen.setBlock(block);
 
@@ -172,7 +144,7 @@ public class Viewer extends NetworkBlock implements InventoryBlock {
         AtomicInteger index = new AtomicInteger(0);
 
         page.getContents().forEach(i -> {
-            sheet.addIcon(index.getAndIncrement(), i.asPageItem());
+            sheet.setIcon(index.getAndIncrement(), i.asPageItem());
         });
 
         sheet.forEachSlot(slot -> {
@@ -185,9 +157,9 @@ public class Viewer extends NetworkBlock implements InventoryBlock {
     }
 
     public void drawBottomBar(InventorySheet sheet, int currentPage) {
-        sheet.addIcon(sheet.getSize() - 8 - 1, getPageLeft(sheet, currentPage));
-        sheet.addIcon(sheet.getSize() - 4 - 1, getPageMiddle(sheet, currentPage));
-        sheet.addIcon(sheet.getSize() - 0 - 1, getPageRight(sheet, currentPage));
+        sheet.setIcon(sheet.getSize() - 8 - 1, getPageLeft(sheet, currentPage));
+        sheet.setIcon(sheet.getSize() - 4 - 1, getPageMiddle(sheet, currentPage));
+        sheet.setIcon(sheet.getSize() - 0 - 1, getPageRight(sheet, currentPage));
     }
 
     public Icon getPageMiddle(InventorySheet sheet, int page) {

@@ -43,6 +43,10 @@ public class DriveItem extends RestoredItem implements IPlaceable {
 
     @Override
     public void placeAsBlock(Block atBlock, Player placedBy) {
-        atBlock.setType(Material.BLAST_FURNACE);
+        // Block is already placed by BlockPlaceEvent with correct type and facing.
+        // Only set type if it doesn't match (e.g., called outside of an event).
+        if (atBlock.getType() != Material.BLAST_FURNACE) {
+            atBlock.setType(Material.BLAST_FURNACE);
+        }
     }
 }

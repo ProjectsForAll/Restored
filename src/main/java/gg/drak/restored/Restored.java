@@ -69,6 +69,9 @@ public final class Restored extends BetterPlugin {
         NetworkManager.getNetworks().forEach(Network::unload);
 
         NetworkMap.stop();
+
+        // Flush all pending database operations before plugin fully disables
+        getDatabase().getMiddleware().flush();
     }
 
     /**

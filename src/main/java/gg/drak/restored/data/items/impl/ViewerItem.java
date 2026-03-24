@@ -43,6 +43,10 @@ public class ViewerItem extends RestoredItem implements IPlaceable {
 
     @Override
     public void placeAsBlock(Block atBlock, Player placedBy) {
-        atBlock.setType(Material.SMOKER);
+        // Block is already placed by BlockPlaceEvent with correct type and facing.
+        // Only set type if it doesn't match (e.g., called outside of an event).
+        if (atBlock.getType() != Material.SMOKER) {
+            atBlock.setType(Material.SMOKER);
+        }
     }
 }
