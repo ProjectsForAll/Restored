@@ -4,6 +4,7 @@ import gg.drak.thebase.objects.Identifiable;
 import host.plas.bou.gui.items.ItemData;
 import host.plas.bou.utils.ColorUtils;
 import gg.drak.restored.data.NetworkManager;
+import gg.drak.restored.serialization.PersistedItemCodec;
 import lombok.Getter;
 import lombok.Setter;
 import mc.obliviate.inventory.Icon;
@@ -39,12 +40,7 @@ public class StoredItem implements Identifiable {
     public StoredItem(ItemData data) {
         this.identifier = data.getIdentifier();
         this.amount = data.getAmount();
-        try {
-            this.item = data.getStack();
-        } catch (Exception e) {
-            gg.drak.restored.Restored.getInstance().logWarning("Failed to get stack from ItemData for identifier: " + identifier + ". ItemData contents: " + data.getData());
-            this.item = new org.bukkit.inventory.ItemStack(org.bukkit.Material.BARRIER);
-        }
+        this.item = flattenStack(PersistedItemCodec.deserializePayload(data.getData()));
     }
 
     public static ItemStack flattenStack(ItemStack stack) {
