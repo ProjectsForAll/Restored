@@ -1,11 +1,17 @@
 package gg.drak.restored.database;
 
 import gg.drak.restored.Restored;
+import gg.drak.restored.data.Network;
 import gg.drak.restored.data.blocks.LocatedBlock;
 import gg.drak.restored.data.blocks.SingleNetworkMap;
+import gg.drak.restored.data.blocks.impl.Drive;
+import gg.drak.restored.data.disks.StorageDisk;
 import gg.drak.restored.database.dao.*;
 import host.plas.bou.sql.DBOperator;
 import lombok.Getter;
+
+import java.util.Optional;
+import java.util.concurrent.ConcurrentSkipListSet;
 
 /**
  * Main database operator for the Restored plugin.
@@ -97,5 +103,52 @@ public class MainOperator extends DBOperator {
     public void saveNetworkMap(SingleNetworkMap singleNetworkMap) {
         networkDAO.insert(singleNetworkMap.getIdentifier(), singleNetworkMap.getOwnerUUID());
         // Blocks are saved individually by NetworkBlock.onSave()
+    }
+
+    public ConcurrentSkipListSet<Network> getAllNetworks() {
+        ConcurrentSkipListSet<Network> networks = new ConcurrentSkipListSet<>();
+        for (NetworkDAO.NetworkData data : getNetworkDAO().getAll()) {
+            // Check if already in middleware to avoid duplicate instances
+            Network network = getMiddleware().getCachedNetwork(data.getIdentifier())
+                    .orElseGet(() -> new Network(data.getIdentifier(), data.getOwnerUuid()));
+
+            // 1. Load all block data into the network's map
+            getNetworkBlockDAO().getByNetworkId(data.getIdentifier()).forEach(blockData -> {
+                LocatedBlock locatedBlock = new LocatedBlock(
+                        blockData.getIdentifier(),
+                        blockData.getNetworkId(),
+                        blockData.getBlockType(),
+                        blockData.asBlockLocation(),
+                        blockData.getData()
+                );
+                network.getNetworkMap().addLocatedBlock(locatedBlock);
+            });
+
+            // 2. Set the controller and instantiate all blocks
+            network.getNetworkMap().getControllerImpl(Optional.of(network)).ifPresent(network::setController);
+            network.updateCache(); // This creates the live NetworkBlock instances (Drives, Viewers, etc.)
+
+            // 3. Load disks for any Drive blocks found
+            network.getBlocks().forEach(block -> {
+                if (block instanceof Drive) {
+                    Drive drive = (Drive) block;
+                    getDiskDAO().getByDriveId(drive.getIdentifier()).forEach(diskData -> {
+                        // Use NetworkManager to ensure disk is cached in middleware
+                        StorageDisk disk = gg.drak.restored.data.NetworkManager.getOrGetDisk(drive, diskData.getIdentifier(), diskData.getSlot());
+                        disk.setCapacity(diskData.getCapacity());
+                        disk.setContents(diskData.getItems());
+                        drive.getDisks().put(diskData.getSlot(), disk);
+                    });
+                }
+            });
+
+            // 4. Load permissions
+            getPermissionDAO().getByNetworkId(data.getIdentifier()).forEach(permissionData -> {
+                network.getPermissionSystem().trust(permissionData.getPermissionNode(), permissionData.getPlayerUuid());
+            });
+
+            networks.add(network);
+        }
+        return networks;
     }
 }

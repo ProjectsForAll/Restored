@@ -94,6 +94,6 @@ artifacts {
 }
 
 wrapper {
-    gradleVersion = '8.9'
+    gradleVersion = '9.2.0'
     distributionType = Wrapper.DistributionType.ALL
 }

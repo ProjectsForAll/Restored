@@ -3,9 +3,11 @@ package gg.drak.restored.data.blocks.impl;
 import com.google.gson.JsonObject;
 import gg.drak.restored.Restored;
 import host.plas.bou.gui.InventorySheet;
+import host.plas.bou.gui.icons.BasicIcon;
 import host.plas.bou.gui.screens.blocks.ScreenBlock;
 import host.plas.bou.gui.screens.events.BlockCloseEvent;
 import host.plas.bou.gui.slots.Slot;
+import host.plas.bou.items.ItemUtils;
 import host.plas.bou.utils.ColorUtils;
 import gg.drak.restored.data.Network;
 import gg.drak.restored.data.blocks.BlockType;
@@ -24,13 +26,10 @@ import mc.obliviate.inventory.Icon;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.entity.Player;
-import org.bukkit.inventory.Inventory;
-import org.bukkit.inventory.InventoryView;
 import org.bukkit.inventory.ItemStack;
 
 import java.util.Optional;
 import java.util.concurrent.ConcurrentSkipListMap;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
 @Getter @Setter
@@ -84,6 +83,12 @@ public class Drive extends NetworkBlock implements InventoryBlock {
     public InventorySheet buildInventorySheet(Player player, ScreenBlock block) {
         InventorySheet sheet = new InventorySheet(getType().getSlots());
 
+        // Populate with empty icons to start so forEachSlot works
+        for (int i = 0; i < sheet.getSize(); i++) {
+            sheet.addIcon(i, new BasicIcon(new ItemStack(Material.AIR)));
+        }
+
+        // Iterate over slots and build icons for disks
         sheet.forEachSlot(this::buildDriveIcon);
 
         return sheet;
@@ -162,40 +167,6 @@ public class Drive extends NetworkBlock implements InventoryBlock {
         }
 
         return stack;
-    }
-
-    public void prepareDisks() {
-        disks.clear();
-    }
-
-    public void trySaveItem(IndexedItem item) {
-        ItemStack stack = item.getItemStack();
-        if (stack == null || stack.getType() == Material.AIR) {
-            return;
-        }
-
-        if (! isCompatibleDisk(stack)) {
-            ItemStack toGive = stack.clone();
-            item.getViewer().getInventory().addItem(toGive);
-
-            item.remove();
-
-            return;
-        }
-
-        if (stack.getAmount() != 1) {
-            int toGiveBack = stack.getAmount() - 1;
-            stack.setAmount(1);
-            item.replace(stack);
-
-            ItemStack toGive = stack.clone();
-            toGive.setAmount(toGiveBack);
-            item.getViewer().getInventory().addItem(toGive);
-
-            return;
-        }
-
-        addDisk(stack, item.getSlotNumber());
     }
 
     public boolean isCompatibleDisk(ItemStack stack) {

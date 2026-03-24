@@ -94,6 +94,14 @@ public class Viewer extends NetworkBlock implements InventoryBlock {
 
         getNetwork().ifPresent(network -> {
             added.set(network.insert(stack));
+
+            if (added.get()) {
+                network.getBlocks().forEach(block -> {
+                    if (block instanceof Drive) {
+                        redraw();
+                    }
+                });
+            }
         });
 
         return added.get();

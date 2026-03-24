@@ -3,6 +3,8 @@ package gg.drak.restored.data.blocks;
 import gg.drak.restored.Restored;
 import gg.drak.restored.data.Network;
 import gg.drak.restored.data.NetworkManager;
+import gg.drak.restored.data.blocks.impl.Drive;
+import gg.drak.restored.data.disks.StorageDisk;
 import gg.drak.restored.database.MainOperator;
 import lombok.Getter;
 import lombok.Setter;
@@ -139,10 +141,14 @@ public class NetworkMap {
     }
 
     public static void loadAllNetworks() {
-        networkMaps = getDatabase().getNetworkMaps();
+        // Use the unified loading logic in MainOperator
+        ConcurrentSkipListSet<Network> networks = getDatabase().getAllNetworks();
         
-        // The global locatedBlocks mapping is now handled by the middleware's block cache
-        // and the individual SingleNetworkMaps.
+        // Ensure all loaded networks are registered in the global maps
+        networks.forEach(network -> {
+            loadSingleMap(network.getNetworkMap());
+            gg.drak.restored.data.NetworkManager.loadNetwork(network);
+        });
     }
 
     public static void loadNetwork(String identifier) {
