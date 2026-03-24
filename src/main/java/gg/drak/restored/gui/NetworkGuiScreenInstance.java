@@ -38,7 +38,10 @@ public class NetworkGuiScreenInstance extends ScreenInstance {
 
         Inventory clickedInventory = event.getClickedInventory();
         Inventory playerInventory = p.getInventory();
-        if (clickedInventory == null || playerInventory == null) return false;
+        Inventory topInventory = event.getView() != null
+                ? event.getView().getTopInventory()
+                : getInventory();
+        if (clickedInventory == null || playerInventory == null || topInventory == null) return false;
 
         boolean isPlace = false;
         InventoryAction action = event.getAction();
@@ -58,7 +61,7 @@ public class NetworkGuiScreenInstance extends ScreenInstance {
             }
 
             if (! isPlace) {
-                if (cursor.getType() != Material.AIR) {
+                if (cursor != null && cursor.getType() != Material.AIR) {
                     if (action == InventoryAction.SWAP_WITH_CURSOR) {
                         isPlace = true;
                     }
@@ -66,13 +69,25 @@ public class NetworkGuiScreenInstance extends ScreenInstance {
             }
         }
 
+        // Top slot: allow place into crafting cells only when that slot is in the grid
         boolean bypassNoPlace = allowTopPlaceSlot != null
-                && clickedInventory.equals(getInventory())
+                && clickedInventory.equals(topInventory)
                 && allowTopPlaceSlot.test(event.getSlot());
 
-        if (isPlace && isNoPlace() && ! bypassNoPlace) {
-            event.setCancelled(true);
-            return false;
+        // Shift-click from player inventory targets the top inventory; clicked inventory is still the bottom.
+        if (! bypassNoPlace && allowTopPlaceSlot != null
+                && clickedInventory.equals(playerInventory)
+                && action == InventoryAction.MOVE_TO_OTHER_INVENTORY) {
+            bypassNoPlace = true;
+        }
+
+        if (isPlace && isNoPlace()) {
+            if (! bypassNoPlace) {
+                event.setCancelled(true);
+                return false;
+            }
+            // Allow vanilla / Obliviate to apply the transfer (crafting grid, shift into top, etc.)
+            event.setCancelled(false);
         }
 
         return furtherClick(event);

@@ -104,6 +104,9 @@ public class MainListener implements Listener {
 
             // If clicking in the bottom inventory (player inventory) and top is a network screen
             if (! screen.getInventory().equals(inventory)) {
+                if (screen.getScreenBlock().orElse(null) instanceof CraftingViewer) {
+                    return;
+                }
                 if (handlePutItem(event, PutType.SHIFT_CLICK_FROM_OWN, action)) {
                     event.setCancelled(true);
                 }
