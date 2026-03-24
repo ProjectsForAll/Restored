@@ -75,7 +75,10 @@ public class ItemManager {
     }
 
     public static Optional<String> readDiskIdentifier(ItemStack stack) {
-        return readString(GenericDiskItem.IDENTIFIER_KEY, stack);
+        Optional<String> id = readString(GenericDiskItem.IDENTIFIER_KEY, stack);
+        if (id.isPresent()) return id;
+        // Legacy stacks from older StorageDisk.getItem() used this key only
+        return readString("storage-disk", stack);
     }
 
     public static Optional<BigInteger> readCapacity(ItemStack stack) {
@@ -157,6 +160,8 @@ public class ItemManager {
     }
 
     public static boolean isDiskItem(ItemStack stack) {
-        return isDiskItem(getTypeFrom(stack));
+        if (stack == null || stack.getType().isAir()) return false;
+        if (isDiskItem(getTypeFrom(stack))) return true;
+        return readDiskIdentifier(stack).isPresent();
     }
 }

@@ -48,8 +48,8 @@ public class Controller extends NetworkBlock {
 
         InventorySheet sheet = new InventorySheet(getType().getSlots());
 
-        // Center of 3×9 chest rows (slot 13)
-        sheet.setIcon(13, getMainIcon(player, block));
+        // Single hopper row — center slot
+        sheet.setIcon(4, getMainIcon(player, block));
 
         return sheet;
     }

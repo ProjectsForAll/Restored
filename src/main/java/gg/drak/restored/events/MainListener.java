@@ -23,6 +23,7 @@ import org.bukkit.inventory.ItemStack;
 
 import java.util.List;
 import java.util.concurrent.ConcurrentSkipListMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public class MainListener implements Listener {
     public MainListener() {
@@ -80,12 +81,17 @@ public class MainListener implements Listener {
 
             // If clicking in the top inventory (the network screen)
             if (screen.getInventory().equals(inventory)) {
-                int slot = event.getRawSlot();
+                int slot = event.getSlot();
                 if (shouldSkipManualDeposit(screen, slot)) {
                     return;
                 }
-                handlePutItem(event, PutType.CURSOR_PLACE, action);
-                event.setCancelled(true);
+                ItemStack cur = event.getCursor();
+                if (cur == null || cur.getType().isAir()) {
+                    return;
+                }
+                if (handlePutItem(event, PutType.CURSOR_PLACE, action)) {
+                    event.setCancelled(true);
+                }
                 return;
             }
         }
@@ -98,8 +104,9 @@ public class MainListener implements Listener {
 
             // If clicking in the bottom inventory (player inventory) and top is a network screen
             if (! screen.getInventory().equals(inventory)) {
-                handlePutItem(event, PutType.SHIFT_CLICK_FROM_OWN, action);
-                event.setCancelled(true);
+                if (handlePutItem(event, PutType.SHIFT_CLICK_FROM_OWN, action)) {
+                    event.setCancelled(true);
+                }
                 return;
             } else {
                 // If shift-clicking from the network screen, we should allow it (it will be handled by the library/Icons)
@@ -123,7 +130,8 @@ public class MainListener implements Listener {
         }).orElse(false);
     }
 
-    public static void handlePutItem(InventoryClickEvent event, PutType type, InventoryAction action) {
+    public static boolean handlePutItem(InventoryClickEvent event, PutType type, InventoryAction action) {
+        AtomicBoolean handled = new AtomicBoolean(false);
         ConcurrentSkipListMap<Integer, Player> viewers = new ConcurrentSkipListMap<>();
         event.getViewers().forEach(viewer -> {
             if (! (viewer instanceof Player)) return;
@@ -153,55 +161,54 @@ public class MainListener implements Listener {
 
                         if (invBlock == null) {
                             return;
-                        } else {
-                            switch (type) {
-                                case CURSOR_PLACE:
-                                    ItemStack cursor = event.getCursor();
-                                    if (cursor == null || cursor.getType().isAir()) return;
+                        }
+                        switch (type) {
+                            case CURSOR_PLACE:
+                                ItemStack cursor = event.getCursor();
+                                if (cursor == null || cursor.getType().isAir()) return;
 
-                                    ItemStack toInsert = cursor.clone();
-                                    if (action == InventoryAction.PLACE_ONE) {
-                                        toInsert.setAmount(1);
-                                    }
+                                ItemStack toInsert = cursor.clone();
+                                if (action == InventoryAction.PLACE_ONE) {
+                                    toInsert.setAmount(1);
+                                }
 
-                                    ItemStack afterInsert = invBlock.tryAddItem(toInsert);
-                                    int leftoverOnAttempt = afterInsert != null ? afterInsert.getAmount() : 0;
-                                    int inserted = toInsert.getAmount() - leftoverOnAttempt;
-                                    if (inserted <= 0) {
-                                        return;
-                                    }
-                                    int newCursorAmount = cursor.getAmount() - inserted;
-                                    if (newCursorAmount <= 0) {
-                                        event.setCursor(null);
-                                    } else {
-                                        ItemStack nextCursor = cursor.clone();
-                                        nextCursor.setAmount(newCursorAmount);
-                                        event.setCursor(nextCursor);
-                                    }
-                                    break;
-                                case SHIFT_CLICK_FROM_OWN:
-                                    ItemStack itemToShift = event.getCurrentItem();
-                                    if (itemToShift == null || itemToShift.getType().isAir()) return;
+                                ItemStack afterInsert = invBlock.tryAddItem(toInsert);
+                                int leftoverOnAttempt = afterInsert != null ? afterInsert.getAmount() : 0;
+                                int inserted = toInsert.getAmount() - leftoverOnAttempt;
+                                if (inserted <= 0) {
+                                    return;
+                                }
+                                handled.set(true);
+                                int newCursorAmount = cursor.getAmount() - inserted;
+                                if (newCursorAmount <= 0) {
+                                    event.setCursor(null);
+                                } else {
+                                    ItemStack nextCursor = cursor.clone();
+                                    nextCursor.setAmount(newCursorAmount);
+                                    event.setCursor(nextCursor);
+                                }
+                                break;
+                            case SHIFT_CLICK_FROM_OWN:
+                                ItemStack itemToShift = event.getCurrentItem();
+                                if (itemToShift == null || itemToShift.getType().isAir()) return;
 
-                                    int originalAmount = itemToShift.getAmount();
-                                    ItemStack shiftLeft = itemToShift.clone();
-                                    
-                                    while (shiftLeft != null && shiftLeft.getAmount() > 0) {
-                                        int beforeAmount = shiftLeft.getAmount();
-                                        shiftLeft = invBlock.tryAddItem(shiftLeft);
-                                        if (shiftLeft != null && shiftLeft.getAmount() == beforeAmount) {
-                                            // No items were added, stop to avoid infinite loop
-                                            break;
-                                        }
-                                    }
+                                ItemStack shiftLeft = itemToShift.clone();
 
-                                    if (shiftLeft == null || shiftLeft.getAmount() == 0) {
-                                        event.setCurrentItem(null);
-                                    } else {
-                                        event.setCurrentItem(shiftLeft);
+                                while (shiftLeft != null && shiftLeft.getAmount() > 0) {
+                                    int beforeAmount = shiftLeft.getAmount();
+                                    shiftLeft = invBlock.tryAddItem(shiftLeft);
+                                    if (shiftLeft != null && shiftLeft.getAmount() == beforeAmount) {
+                                        break;
                                     }
-                                    break;
-                            }
+                                    handled.set(true);
+                                }
+
+                                if (shiftLeft == null || shiftLeft.getAmount() == 0) {
+                                    event.setCurrentItem(null);
+                                } else {
+                                    event.setCurrentItem(shiftLeft);
+                                }
+                                break;
                         }
                     } catch (Throwable e) {
                         Restored.getInstance().logSevere("Error while handling put item event [1]: " + e.getMessage(), e);
@@ -211,6 +218,7 @@ public class MainListener implements Listener {
                 Restored.getInstance().logSevere("Error while handling put item event [2]: " + e.getMessage(), e);
             }
         });
+        return handled.get();
     }
 
     public enum PutType {

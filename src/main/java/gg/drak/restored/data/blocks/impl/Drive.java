@@ -10,6 +10,7 @@ import host.plas.bou.gui.slots.Slot;
 import host.plas.bou.items.ItemUtils;
 import host.plas.bou.utils.ColorUtils;
 import gg.drak.restored.data.Network;
+import gg.drak.restored.data.NetworkManager;
 import gg.drak.restored.data.blocks.BlockType;
 import gg.drak.restored.data.blocks.NetworkBlock;
 import gg.drak.restored.data.blocks.inventory.InventoryBlock;
@@ -25,9 +26,14 @@ import lombok.Setter;
 import mc.obliviate.inventory.Icon;
 import org.bukkit.Location;
 import org.bukkit.Material;
+import org.bukkit.World;
+import org.bukkit.block.Block;
 import org.bukkit.entity.Player;
+import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.inventory.ItemStack;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.concurrent.atomic.AtomicReference;
@@ -113,9 +119,35 @@ public class Drive extends NetworkBlock implements InventoryBlock {
     }
 
     public void removeDisk(int index) {
-        disks.remove(index);
+        StorageDisk removed = disks.remove(index);
+        if (removed != null) {
+            removed.setDrive(null);
+            removed.setSlot(null);
+            removed.save();
+        }
         onSave();
         getNetwork().ifPresent(Network::updateCache);
+    }
+
+    @Override
+    public void onBreak(BlockBreakEvent event) {
+        Block block = event.getBlock();
+        if (! getBlock().equals(block)) return;
+
+        World world = block.getWorld();
+        Location loc = block.getLocation().add(0.5, 0.5, 0.5);
+        List<StorageDisk> toDrop = new ArrayList<>(disks.values());
+        for (StorageDisk disk : toDrop) {
+            world.dropItemNaturally(loc, disk.getItem());
+            disk.setDrive(null);
+            disk.setSlot(null);
+            disk.save();
+        }
+        disks.clear();
+        onSaveSpecific();
+        saveData();
+
+        super.onBreak(event);
     }
 
     @Override
@@ -182,7 +214,12 @@ public class Drive extends NetworkBlock implements InventoryBlock {
                 disk.setCapacity(diskItem.getSize());
                 putDisk(index, disk);
             }
-        }, () -> {});
+        }, () -> ItemManager.readDiskIdentifier(stack).ifPresent(id -> {
+            StorageDisk disk = NetworkManager.getOrGetDisk(this, id, index);
+            disk.setDrive(this);
+            disk.setSlot(index);
+            putDisk(index, disk);
+        }));
     }
 
     public Optional<Icon> getDriveIcon(int index) {

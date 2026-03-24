@@ -31,6 +31,7 @@ import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.inventory.ItemStack;
 
 import java.math.BigInteger;
+import java.util.HashMap;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
@@ -160,6 +161,7 @@ public class NetworkManager {
         Player player = (Player) event.getWhoClicked();
         ClickType type = event.getClick();
         ItemStack cursor = event.getCursor();
+        boolean cursorEmpty = cursor == null || cursor.getType().isAir() || cursor.getAmount() <= 0;
 
         Optional<ScreenInstance> screenOptional = ScreenManager.getScreen(player);
         if (screenOptional.isEmpty()) {
@@ -176,43 +178,90 @@ public class NetworkManager {
         }
         Network network = networkOptional.get().get();
 
+        Runnable redraw = () -> screen.getScreenBlock()
+                .filter(NetworkBlock.class::isInstance)
+                .map(NetworkBlock.class::cast)
+                .ifPresent(NetworkBlock::redraw);
+
+        if (type == ClickType.SHIFT_LEFT || type == ClickType.SHIFT_RIGHT) {
+            if (cursorEmpty && item.getAmount().compareTo(BigInteger.ZERO) > 0) {
+                BigInteger totalMoved = BigInteger.ZERO;
+                BigInteger remaining = item.getAmount();
+                int maxStack = Math.max(1, item.getItem().getMaxStackSize());
+                while (remaining.compareTo(BigInteger.ZERO) > 0) {
+                    BigInteger take = remaining.min(BigInteger.valueOf(maxStack));
+                    int giveAmt = take.min(BigInteger.valueOf(Integer.MAX_VALUE)).intValue();
+                    ItemStack give = item.getItem().clone();
+                    give.setAmount(giveAmt);
+                    HashMap<Integer, ItemStack> overflow = player.getInventory().addItem(give);
+                    if (! overflow.isEmpty()) {
+                        break;
+                    }
+                    totalMoved = totalMoved.add(take);
+                    remaining = remaining.subtract(take);
+                }
+                if (totalMoved.compareTo(BigInteger.ZERO) > 0) {
+                    network.removeItem(item, totalMoved);
+                    event.setCancelled(true);
+                    redraw.run();
+                }
+                return;
+            }
+        }
+
         if (type == ClickType.LEFT) {
+            if (cursorEmpty && item.getAmount().compareTo(BigInteger.ZERO) > 0) {
+                ItemStack one = item.getItem().clone();
+                one.setAmount(1);
+                HashMap<Integer, ItemStack> overflow = player.getInventory().addItem(one);
+                if (! overflow.isEmpty()) {
+                    event.setCancelled(true);
+                    return;
+                }
+                network.removeItem(item, BigInteger.ONE);
+                event.setCancelled(true);
+                redraw.run();
+                return;
+            }
             if (cursor != null && item.isComparable(cursor)) {
-                // item is greater than 0
                 if (item.getAmount().compareTo(BigInteger.ZERO) > 0) {
                     cursor.setAmount(cursor.getAmount() + 1);
                     network.removeItem(item, BigInteger.ONE);
-
                     event.setCancelled(true);
+                    redraw.run();
                 } else {
-                    // item is 0
                     if (cursor.getAmount() > 0) {
                         cursor.setAmount(cursor.getAmount() - 1);
                         item.setAmount(item.getAmount().add(BigInteger.ONE));
-
                         event.setCancelled(true);
+                        redraw.run();
                     } else {
-                        // cursor is 0
                         event.setCancelled(true);
                     }
                 }
             } else if (cursor != null && ! item.isComparable(cursor)) {
-                if (network.canInsert(cursor)) {
-                    network.insert(cursor);
-                } else {
-                    if (network.canInsertOne(cursor)) {
-                        ItemStack one = cursor.clone();
-                        one.setAmount(1);
-
-                        network.insert(one);
-
-                        cursor.setAmount(cursor.getAmount() - 1);
-
-                        event.setCancelled(true);
+                event.setCancelled(true);
+                int before = cursor.getAmount();
+                int leftoverAmt = network.insertItems(cursor);
+                int inserted = before - leftoverAmt;
+                if (inserted > 0) {
+                    if (leftoverAmt <= 0) {
+                        event.setCursor(null);
                     } else {
-                        event.setCancelled(true);
+                        ItemStack next = cursor.clone();
+                        next.setAmount(leftoverAmt);
+                        event.setCursor(next);
                     }
-                    event.setCancelled(true);
+                    redraw.run();
+                } else if (network.canInsertOne(cursor)) {
+                    ItemStack one = cursor.clone();
+                    one.setAmount(1);
+                    network.insertItems(one);
+                    cursor.setAmount(cursor.getAmount() - 1);
+                    if (cursor.getAmount() <= 0) {
+                        event.setCursor(null);
+                    }
+                    redraw.run();
                 }
             }
         }

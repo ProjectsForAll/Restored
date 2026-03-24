@@ -4,6 +4,10 @@ import gg.drak.thebase.objects.Identifiable;
 import host.plas.bou.utils.ColorUtils;
 import gg.drak.restored.Restored;
 import gg.drak.restored.data.blocks.impl.Drive;
+import gg.drak.restored.data.disks.impl.FourKDisk;
+import gg.drak.restored.data.items.ItemType;
+import gg.drak.restored.data.items.impl.FourKDiskItem;
+import gg.drak.restored.data.items.impl.GenericDiskItem;
 import gg.drak.restored.data.screens.items.StoredItem;
 import gg.drak.restored.database.dao.DiskDAO;
 import lombok.Getter;
@@ -11,9 +15,6 @@ import lombok.Setter;
 import org.bukkit.Material;
 import org.bukkit.NamespacedKey;
 import org.bukkit.inventory.ItemStack;
-import org.bukkit.inventory.meta.ItemMeta;
-import org.bukkit.persistence.PersistentDataContainer;
-import org.bukkit.persistence.PersistentDataType;
 
 import java.math.BigInteger;
 import java.sql.SQLException;
@@ -176,22 +177,14 @@ public class StorageDisk implements Identifiable {
         return total;
     }
 
+    /**
+     * Stack that {@link gg.drak.restored.data.items.ItemManager} can deserialize so disks can be re-inserted into drives.
+     */
     public ItemStack getItem() {
-        ItemStack stack = new ItemStack(Material.IRON_INGOT);
-        stack.setAmount(1);
-
-        ItemMeta meta = stack.getItemMeta();
-        if (meta != null) {
-            meta.setDisplayName(ColorUtils.colorizeHard("&cStorage Disk"));
-            meta.setLore(getLore());
-
-            PersistentDataContainer container = meta.getPersistentDataContainer();
-            container.set(getStorageKey("storage-disk"), PersistentDataType.STRING, getUuid().toString());
-
-            stack.setItemMeta(meta);
+        if (this instanceof FourKDisk) {
+            return new FourKDiskItem(getIdentifier()).getItem();
         }
-
-        return stack;
+        return new GenericDiskItem(ItemType.GENERIC_DISK, getCapacity(), getIdentifier()).getItem();
     }
 
     public NamespacedKey getStorageKey(String key) {
