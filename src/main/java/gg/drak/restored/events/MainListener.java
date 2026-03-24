@@ -81,7 +81,7 @@ public class MainListener implements Listener {
 
             // If clicking in the top inventory (the network screen)
             if (screen.getInventory().equals(inventory)) {
-                int slot = event.getSlot();
+                int slot = event.getRawSlot();
                 if (shouldSkipManualDeposit(screen, slot)) {
                     return;
                 }
@@ -115,6 +115,33 @@ public class MainListener implements Listener {
                 // If shift-clicking from the network screen, we should allow it (it will be handled by the library/Icons)
                 return;
             }
+        }
+    }
+
+    /**
+     * Obliviate/noPlace GUIs cancel drags by default; allow drags that only touch the crafting grid.
+     */
+    @EventHandler(priority = EventPriority.HIGHEST)
+    public void onInventoryDragIntoCrafting(InventoryDragEvent event) {
+        if (! (event.getWhoClicked() instanceof Player)) return;
+        Player player = (Player) event.getWhoClicked();
+        if (! ScreenManager.hasScreen(player)) return;
+
+        ScreenInstance screen = ScreenManager.getScreen(player).get();
+        if (! (screen.getScreenBlock().orElse(null) instanceof CraftingViewer)) return;
+
+        int topSize = event.getView().getTopInventory().getSize();
+        boolean touchesTop = false;
+        for (int raw : event.getRawSlots()) {
+            if (raw < topSize) {
+                touchesTop = true;
+                if (! CraftingViewer.isCraftingSlot(raw)) {
+                    return;
+                }
+            }
+        }
+        if (touchesTop) {
+            event.setCancelled(false);
         }
     }
 

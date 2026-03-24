@@ -165,7 +165,11 @@ public class CraftingViewer extends NetworkBlock implements InventoryBlock {
             }
         }
 
-        // Crafting grid slots (6-8, 15-17, 24-26) - empty by default, can be filled by player
+        // 3×3 crafting grid: use SlotType.OTHER + BasicIcon — default AirSlot uses SlotType.EMPTY and
+        // Obliviate treats those as non-interactive, blocking placement.
+        for (int slot : CRAFTING_SLOTS) {
+            sheet.setIcon(slot, new BasicIcon(Material.AIR));
+        }
 
         // Crafting table button (slot 35)
         sheet.setIcon(CRAFTING_TABLE_SLOT, getCraftingTableIcon(player));

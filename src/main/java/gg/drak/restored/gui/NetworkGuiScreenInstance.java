@@ -43,6 +43,10 @@ public class NetworkGuiScreenInstance extends ScreenInstance {
                 : getInventory();
         if (clickedInventory == null || playerInventory == null || topInventory == null) return false;
 
+        int topSize = topInventory.getSize();
+        int rawSlot = event.getRawSlot();
+        boolean rawInTopWindow = rawSlot >= 0 && rawSlot < topSize;
+
         boolean isPlace = false;
         InventoryAction action = event.getAction();
 
@@ -69,17 +73,16 @@ public class NetworkGuiScreenInstance extends ScreenInstance {
             }
         }
 
-        // Top slot: allow place into crafting cells only when that slot is in the grid
-        boolean bypassNoPlace = allowTopPlaceSlot != null
-                && clickedInventory.equals(topInventory)
-                && allowTopPlaceSlot.test(event.getSlot());
+        // Use raw slot + top size — clickedInventory may not match getTopInventory() by reference on some views.
+        boolean craftingGridBypass = allowTopPlaceSlot != null
+                && rawInTopWindow
+                && allowTopPlaceSlot.test(rawSlot);
 
-        // Shift-click from player inventory targets the top inventory; clicked inventory is still the bottom.
-        if (! bypassNoPlace && allowTopPlaceSlot != null
+        boolean shiftIntoTopBypass = allowTopPlaceSlot != null
                 && clickedInventory.equals(playerInventory)
-                && action == InventoryAction.MOVE_TO_OTHER_INVENTORY) {
-            bypassNoPlace = true;
-        }
+                && action == InventoryAction.MOVE_TO_OTHER_INVENTORY;
+
+        boolean bypassNoPlace = craftingGridBypass || shiftIntoTopBypass;
 
         if (isPlace && isNoPlace()) {
             if (! bypassNoPlace) {
