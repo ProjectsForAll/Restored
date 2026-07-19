@@ -2,6 +2,7 @@ package gg.drak.restored.data.items;
 
 import host.plas.bou.commands.Sender;
 import gg.drak.restored.Restored;
+import host.plas.bou.commands.Sender;
 import gg.drak.restored.data.Network;
 import gg.drak.restored.data.NetworkManager;
 import gg.drak.restored.data.permission.PermissionNode;
@@ -38,9 +39,9 @@ public interface IPlaceable {
         }, () -> {
             Restored.getInstance().logInfo("No network found for block placement for " + getClass().getSimpleName() + "...");
 
-            onNoNetworkPlace(placedBlock, player);
-
-//            event.setCancelled(true);
+            Sender sender = new Sender(player);
+            sender.sendMessage("&cYou must place this block adjacent to an existing network!");
+            event.setCancelled(true);
         });
     }
 

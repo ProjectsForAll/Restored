@@ -58,7 +58,7 @@ public class CraftingViewer extends NetworkBlock implements InventoryBlock {
 
     @Override
     protected ScreenInstance createScreenInstance(Player player, InventorySheet inventorySheet) {
-        return new NetworkGuiScreenInstance(player, getType(), inventorySheet, CraftingViewer::isCraftingSlot);
+        return new NetworkGuiScreenInstance(player, getType(), inventorySheet, CraftingViewer::isCraftingSlot, this::tryAddItem);
     }
 
     @Override

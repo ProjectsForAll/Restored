@@ -5,15 +5,10 @@ import gg.drak.restored.data.blocks.BlockLocation;
 import gg.drak.restored.data.blocks.LocatedBlock;
 import gg.drak.restored.data.blocks.NetworkMap;
 import gg.drak.restored.data.blocks.SingleNetworkMap;
-import gg.drak.restored.data.blocks.impl.Controller;
-import gg.drak.restored.data.blocks.impl.CraftingViewer;
-import gg.drak.restored.data.blocks.impl.Drive;
-import gg.drak.restored.data.blocks.impl.Viewer;
+import gg.drak.restored.data.blocks.impl.*;
 import gg.drak.restored.data.blocks.NetworkBlock;
 import gg.drak.restored.data.disks.StorageDisk;
-import gg.drak.restored.data.items.impl.CraftingViewerItem;
-import gg.drak.restored.data.items.impl.DriveItem;
-import gg.drak.restored.data.items.impl.ViewerItem;
+import gg.drak.restored.data.items.impl.*;
 import gg.drak.restored.data.permission.PermissionNode;
 import gg.drak.restored.data.permission.PermissionSystem;
 import gg.drak.restored.data.screens.items.StoredItem;
@@ -216,36 +211,95 @@ public class Network implements Comparable<Network> {
         getNetworkMap().save();
     }
 
-    public ConcurrentSkipListSet<StorageDisk> getDisks() {
-        ConcurrentSkipListSet<StorageDisk> disks = new ConcurrentSkipListSet<>();
-        
+    public List<StorageDisk> getDisks() {
+        List<StorageDisk> disks = new ArrayList<>();
+
+        // Collect drives sorted by priority (descending)
+        List<Drive> drives = new ArrayList<>();
         getBlocks().forEach(block -> {
             if (block instanceof Drive) {
-                Drive drive = (Drive) block;
-                drive.getDisks().values().forEach(disks::add);
+                drives.add((Drive) block);
             }
         });
-        
+        drives.sort((a, b) -> Integer.compare(b.getPriority(), a.getPriority()));
+
+        for (Drive drive : drives) {
+            disks.addAll(drive.getDisks().values());
+        }
+
         return disks;
+    }
+
+    public List<ExternalStorage> getExternalStorages() {
+        List<ExternalStorage> storages = new ArrayList<>();
+        getBlocks().forEach(block -> {
+            if (block instanceof ExternalStorage) {
+                storages.add((ExternalStorage) block);
+            }
+        });
+        storages.sort((a, b) -> Integer.compare(b.getPriority(), a.getPriority()));
+        return storages;
     }
 
     public boolean canInsert(ItemStack stack) {
         if (stack == null || stack.getType().isAir()) {
             return false;
         }
-        
-        ConcurrentSkipListSet<StorageDisk> disks = getDisks();
-        if (disks.isEmpty()) {
-            return false;
-        }
-        
+
+        List<StorageDisk> disks = getDisks();
         for (StorageDisk disk : disks) {
             if (disk.getRemainingCapacity().compareTo(BigInteger.ZERO) > 0) {
                 return true;
             }
         }
-        
+
+        // Check external storages
+        ItemStack probe = stack.clone();
+        probe.setAmount(1);
+        for (ExternalStorage es : getExternalStorages()) {
+            if (es.canAcceptIntoContainer(probe)) {
+                return true;
+            }
+        }
+
         return false;
+    }
+
+    /**
+     * @return true if the full stack could be inserted into disks and/or external storage
+     */
+    public boolean canFullyInsert(ItemStack stack) {
+        if (stack == null || stack.getType().isAir()) {
+            return false;
+        }
+
+        BigInteger needed = BigInteger.valueOf(stack.getAmount());
+        BigInteger diskSpace = BigInteger.ZERO;
+        for (StorageDisk disk : getDisks()) {
+            diskSpace = diskSpace.add(disk.getRemainingCapacity());
+        }
+
+        if (diskSpace.compareTo(needed) >= 0) {
+            return true;
+        }
+
+        BigInteger externalNeeded = needed.subtract(diskSpace);
+        if (externalNeeded.compareTo(BigInteger.ZERO) <= 0) {
+            return true;
+        }
+
+        ItemStack probe = stack.clone();
+        probe.setAmount(externalNeeded.min(BigInteger.valueOf(Integer.MAX_VALUE)).intValue());
+
+        for (ExternalStorage es : getExternalStorages()) {
+            int leftover = es.simulateInsertIntoContainer(probe);
+            if (leftover <= 0) {
+                return true;
+            }
+            probe.setAmount(leftover);
+        }
+
+        return probe.getAmount() <= 0;
     }
 
     /**
@@ -257,19 +311,31 @@ public class Network implements Comparable<Network> {
             return stack == null ? 0 : stack.getAmount();
         }
 
-        ConcurrentSkipListSet<StorageDisk> disks = getDisks();
-        if (disks.isEmpty()) {
-            return stack.getAmount();
-        }
-
         ItemStack remaining = stack.clone();
+        List<StorageDisk> disks = getDisks();
 
+        // First pass: prefer disks that already contain this item type (keep items together)
         for (StorageDisk disk : disks) {
-            if (remaining.getAmount() <= 0) {
+            if (remaining.getAmount() <= 0) break;
+            if (disk.isFull()) continue;
+            if (disk.getStoredItem(remaining).isEmpty()) continue; // skip disks that don't have this item yet
+
+            BigInteger leftover = disk.addItem(remaining);
+            disk.save();
+
+            if (leftover.compareTo(BigInteger.ZERO) <= 0) {
+                remaining.setAmount(0);
                 break;
             }
+            remaining.setAmount(leftover.intValue());
+        }
 
-            if (! disk.isFull()) {
+        // Second pass: try any disk with space
+        if (remaining.getAmount() > 0) {
+            for (StorageDisk disk : disks) {
+                if (remaining.getAmount() <= 0) break;
+                if (disk.isFull()) continue;
+
                 BigInteger leftover = disk.addItem(remaining);
                 disk.save();
 
@@ -277,8 +343,16 @@ public class Network implements Comparable<Network> {
                     remaining.setAmount(0);
                     break;
                 }
-
                 remaining.setAmount(leftover.intValue());
+            }
+        }
+
+        // Try external storages last
+        if (remaining.getAmount() > 0) {
+            for (ExternalStorage es : getExternalStorages()) {
+                if (remaining.getAmount() <= 0) break;
+                int leftover = es.insertIntoContainer(remaining);
+                remaining.setAmount(leftover);
             }
         }
 
@@ -304,30 +378,65 @@ public class Network implements Comparable<Network> {
         return canInsert(one);
     }
 
-    public void removeItem(StoredItem item, BigInteger amount) {
+    /**
+     * @return the amount actually removed (may be less than requested)
+     */
+    public BigInteger removeItem(StoredItem item, BigInteger amount) {
         if (item == null || amount.compareTo(BigInteger.ZERO) <= 0) {
-            return;
+            return BigInteger.ZERO;
         }
-        
-        ConcurrentSkipListSet<StorageDisk> disks = getDisks();
+
         BigInteger remaining = amount;
-        
-        for (StorageDisk disk : disks) {
-            if (remaining.compareTo(BigInteger.ZERO) <= 0) {
+        List<StorageDisk> disks = getDisks();
+
+        // If the item knows which disk it lives in, try that disk first
+        if (item.getDiskIdentifier() != null) {
+            for (StorageDisk disk : disks) {
+                if (!disk.getIdentifier().equals(item.getDiskIdentifier())) continue;
+
+                Optional<StoredItem> storedItem = disk.getStoredItem(item.getItem());
+                if (storedItem.isPresent()) {
+                    BigInteger available = storedItem.get().getAmount();
+                    BigInteger toRemove = remaining.min(available);
+
+                    disk.removeItem(storedItem.get(), toRemove);
+                    disk.save();
+
+                    remaining = remaining.subtract(toRemove);
+                }
                 break;
             }
-            
-            Optional<StoredItem> storedItem = disk.getStoredItem(item.getItem());
-            if (storedItem.isPresent()) {
-                BigInteger available = storedItem.get().getAmount();
-                BigInteger toRemove = remaining.min(available);
-                
-                disk.removeItem(storedItem.get(), toRemove);
-                disk.save();
-                
-                remaining = remaining.subtract(toRemove);
+        }
+
+        // Fall back to other disks if needed
+        if (remaining.compareTo(BigInteger.ZERO) > 0) {
+            for (StorageDisk disk : disks) {
+                if (remaining.compareTo(BigInteger.ZERO) <= 0) break;
+                // Skip the disk we already tried
+                if (item.getDiskIdentifier() != null && disk.getIdentifier().equals(item.getDiskIdentifier())) continue;
+
+                Optional<StoredItem> storedItem = disk.getStoredItem(item.getItem());
+                if (storedItem.isPresent()) {
+                    BigInteger available = storedItem.get().getAmount();
+                    BigInteger toRemove = remaining.min(available);
+
+                    disk.removeItem(storedItem.get(), toRemove);
+                    disk.save();
+
+                    remaining = remaining.subtract(toRemove);
+                }
             }
         }
+
+        // Try external storages last
+        if (remaining.compareTo(BigInteger.ZERO) > 0) {
+            for (ExternalStorage es : getExternalStorages()) {
+                if (remaining.compareTo(BigInteger.ZERO) <= 0) break;
+                remaining = es.removeFromContainer(item.getItem(), remaining);
+            }
+        }
+
+        return amount.subtract(remaining);
     }
 
     public Optional<ViewerPage> getPage(int pageIndex) {
@@ -345,17 +454,30 @@ public class Network implements Comparable<Network> {
             allItems.addAll(disk.getContents());
         });
 
-        // Remove duplicates by combining items with the same type
-        Map<ItemStack, StoredItem> itemMap = new HashMap<>();
-        for (StoredItem item : allItems) {
-            ItemStack key = StoredItem.flattenStack(item.getItem());
-            itemMap.merge(key, item, (existing, newItem) -> {
-                BigInteger combinedAmount = existing.getAmount().add(newItem.getAmount());
-                return new StoredItem(existing.getIdentifier(), combinedAmount, existing.getItem());
-            });
+        // Include external storage items
+        for (ExternalStorage es : getExternalStorages()) {
+            allItems.addAll(es.getExternalItems());
         }
 
-        List<StoredItem> uniqueItems = new ArrayList<>(itemMap.values());
+        // Remove duplicates by combining items with the same type and metadata.
+        // The merged StoredItem keeps the diskIdentifier of the first occurrence so
+        // that removal can target the correct disk first.
+        List<StoredItem> uniqueItems = new ArrayList<>();
+        for (StoredItem item : allItems) {
+            boolean merged = false;
+            for (int i = 0; i < uniqueItems.size(); i++) {
+                StoredItem existing = uniqueItems.get(i);
+                if (existing.isComparable(item.getItem())) {
+                    BigInteger combinedAmount = existing.getAmount().add(item.getAmount());
+                    uniqueItems.set(i, new StoredItem(existing.getIdentifier(), existing.getDiskIdentifier(), combinedAmount, existing.getItem()));
+                    merged = true;
+                    break;
+                }
+            }
+            if (!merged) {
+                uniqueItems.add(item);
+            }
+        }
 
         if (uniqueItems.isEmpty()) {
             return Optional.empty();
@@ -415,6 +537,30 @@ public class Network implements Comparable<Network> {
     public void onBlockPlace(Block block, CraftingViewerItem item) {
         CraftingViewer craftingViewer = new CraftingViewer(this, block.getLocation());
         craftingViewer.onPlaced();
+        updateCache();
+    }
+
+    public void onBlockPlace(Block block, ExternalStorageItem item) {
+        ExternalStorage externalStorage = new ExternalStorage(this, block.getLocation());
+        externalStorage.onPlaced();
+        updateCache();
+    }
+
+    public void onBlockPlace(Block block, ImporterItem item) {
+        Importer importer = new Importer(this, block.getLocation());
+        importer.onPlaced();
+        updateCache();
+    }
+
+    public void onBlockPlace(Block block, ExporterItem item) {
+        Exporter exporter = new Exporter(this, block.getLocation());
+        exporter.onPlaced();
+        updateCache();
+    }
+
+    public void onBlockPlace(Block block, CrafterItem item) {
+        Crafter crafter = new Crafter(this, block.getLocation());
+        crafter.onPlaced();
         updateCache();
     }
 

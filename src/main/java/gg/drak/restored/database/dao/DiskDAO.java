@@ -109,7 +109,7 @@ public class DiskDAO {
                         int slot = rs.getInt("Slot");
                         BigInteger capacity = new BigInteger(rs.getString("Capacity"));
                         String itemsJson = rs.getString("Items");
-                        ConcurrentSkipListSet<StoredItem> items = deserializeItems(itemsJson);
+                        ConcurrentSkipListSet<StoredItem> items = deserializeItems(itemsJson, identifier);
 
                         disks.add(new DiskData(identifier, driveId, slot, capacity, items));
                     }
@@ -152,7 +152,7 @@ public class DiskDAO {
                         int slot = rs.getInt("Slot");
                         BigInteger capacity = new BigInteger(rs.getString("Capacity"));
                         String itemsJson = rs.getString("Items");
-                        ConcurrentSkipListSet<StoredItem> items = deserializeItems(itemsJson);
+                        ConcurrentSkipListSet<StoredItem> items = deserializeItems(itemsJson, identifier);
 
                         DiskData data = new DiskData(identifier, driveId, slot, capacity, items);
                         
@@ -208,6 +208,13 @@ public class DiskDAO {
      * Deserialize items from JSON string using Gson.
      */
     private ConcurrentSkipListSet<StoredItem> deserializeItems(String json) {
+        return deserializeItems(json, null);
+    }
+
+    /**
+     * Deserialize items from JSON string, tagging each with the owning disk identifier.
+     */
+    private ConcurrentSkipListSet<StoredItem> deserializeItems(String json, String diskIdentifier) {
         ConcurrentSkipListSet<StoredItem> items = new ConcurrentSkipListSet<>();
 
         if (json == null || json.isEmpty() || json.trim().equals("[]")) {
@@ -226,7 +233,7 @@ public class DiskDAO {
 
                     BigInteger amount = new BigInteger(amountStr);
                     ItemData itemData = new ItemData(identifier, amount, itemDataStr);
-                    StoredItem item = new StoredItem(itemData);
+                    StoredItem item = new StoredItem(itemData, diskIdentifier);
                     items.add(item);
                 } catch (Exception e) {
                     Restored.getInstance().logWarning("Failed to parse item element: " + element, e);

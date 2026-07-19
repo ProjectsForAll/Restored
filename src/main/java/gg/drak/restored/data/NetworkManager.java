@@ -21,6 +21,7 @@ import lombok.Getter;
 import lombok.Setter;
 import org.bukkit.block.Block;
 import org.bukkit.block.BlockFace;
+import org.bukkit.block.Container;
 import org.bukkit.entity.Player;
 import org.bukkit.event.block.Action;
 import org.bukkit.event.block.BlockBreakEvent;
@@ -190,18 +191,24 @@ public class NetworkManager {
                 int maxStack = Math.max(1, item.getItem().getMaxStackSize());
                 while (remaining.compareTo(BigInteger.ZERO) > 0) {
                     BigInteger take = remaining.min(BigInteger.valueOf(maxStack));
-                    int giveAmt = take.min(BigInteger.valueOf(Integer.MAX_VALUE)).intValue();
-                    ItemStack give = item.getItem().clone();
-                    give.setAmount(giveAmt);
-                    HashMap<Integer, ItemStack> overflow = player.getInventory().addItem(give);
-                    if (! overflow.isEmpty()) {
+                    BigInteger removed = network.removeItem(item, take);
+                    if (removed.compareTo(BigInteger.ZERO) <= 0) {
                         break;
                     }
-                    totalMoved = totalMoved.add(take);
-                    remaining = remaining.subtract(take);
+
+                    ItemStack give = item.getItem().clone();
+                    give.setAmount(removed.min(BigInteger.valueOf(Integer.MAX_VALUE)).intValue());
+                    HashMap<Integer, ItemStack> overflow = player.getInventory().addItem(give);
+                    if (! overflow.isEmpty()) {
+                        for (ItemStack left : overflow.values()) {
+                            network.insertItems(left);
+                        }
+                        break;
+                    }
+                    totalMoved = totalMoved.add(removed);
+                    remaining = remaining.subtract(removed);
                 }
                 if (totalMoved.compareTo(BigInteger.ZERO) > 0) {
-                    network.removeItem(item, totalMoved);
                     event.setCancelled(true);
                     redraw.run();
                 }
@@ -211,22 +218,32 @@ public class NetworkManager {
 
         if (type == ClickType.LEFT) {
             if (cursorEmpty && item.getAmount().compareTo(BigInteger.ZERO) > 0) {
-                ItemStack one = item.getItem().clone();
-                one.setAmount(1);
-                HashMap<Integer, ItemStack> overflow = player.getInventory().addItem(one);
-                if (! overflow.isEmpty()) {
+                BigInteger removed = network.removeItem(item, BigInteger.ONE);
+                if (removed.compareTo(BigInteger.ZERO) <= 0) {
                     event.setCancelled(true);
                     return;
                 }
-                network.removeItem(item, BigInteger.ONE);
+
+                ItemStack one = item.getItem().clone();
+                one.setAmount(removed.intValue());
+                HashMap<Integer, ItemStack> overflow = player.getInventory().addItem(one);
+                if (! overflow.isEmpty()) {
+                    network.insertItems(one);
+                    event.setCancelled(true);
+                    return;
+                }
                 event.setCancelled(true);
                 redraw.run();
                 return;
             }
             if (cursor != null && item.isComparable(cursor)) {
                 if (item.getAmount().compareTo(BigInteger.ZERO) > 0) {
-                    cursor.setAmount(cursor.getAmount() + 1);
-                    network.removeItem(item, BigInteger.ONE);
+                    BigInteger removed = network.removeItem(item, BigInteger.ONE);
+                    if (removed.compareTo(BigInteger.ZERO) <= 0) {
+                        event.setCancelled(true);
+                        return;
+                    }
+                    cursor.setAmount(cursor.getAmount() + removed.intValue());
                     event.setCancelled(true);
                     redraw.run();
                 } else {
@@ -412,7 +429,7 @@ public class NetworkManager {
 
         for (String uuid : getOwnedNetworkUuids(player)) {
             Optional<Network> network = NetworkManager.getNetwork(UUID.fromString(uuid));
-            network.ifPresent(NetworkManager::loadNetwork);
+            network.ifPresent(networks::add);
         }
 
         return networks;
@@ -431,11 +448,30 @@ public class NetworkManager {
             ConcurrentSkipListSet<Network> networks = new ConcurrentSkipListSet<>();
 
             for (String uuid : getAllNetworkUuids()) {
-                CompletableFuture.runAsync(() -> NetworkManager.getOrGetNetwork(UUID.fromString(uuid)));
+                getOrGetNetwork(UUID.fromString(uuid)).ifPresent(networks::add);
             }
 
             return networks;
         });
+    }
+
+    /**
+     * Find the first adjacent container, skipping blocks that belong to a network.
+     */
+    public static Optional<Container> getAdjacentContainer(Block self) {
+        BlockFace[] faces = {
+                BlockFace.NORTH, BlockFace.EAST, BlockFace.SOUTH,
+                BlockFace.WEST, BlockFace.UP, BlockFace.DOWN
+        };
+        for (BlockFace face : faces) {
+            Block relative = self.getRelative(face);
+            if (getNetworkBlockAt(relative).isPresent()) continue;
+
+            if (relative.getState(true) instanceof Container container) {
+                return Optional.of(container);
+            }
+        }
+        return Optional.empty();
     }
 
     public static boolean isOwnerOf(String networkUuid, Player player) {

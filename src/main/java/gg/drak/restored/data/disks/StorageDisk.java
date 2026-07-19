@@ -139,13 +139,13 @@ public class StorageDisk implements Identifiable {
             if (canAdd.compareTo(BigInteger.ZERO) <= 0) return BigInteger.valueOf(stack.getAmount());
 
             existing.ifPresent(contents::remove);
-            contents.add(new StoredItem(existing.map(StoredItem::getIdentifier).orElse(UUID.randomUUID().toString()), itemQuantity.add(canAdd), stack));
+            contents.add(new StoredItem(existing.map(StoredItem::getIdentifier).orElse(UUID.randomUUID().toString()), this.identifier, itemQuantity.add(canAdd), stack));
 
             return BigInteger.valueOf(stack.getAmount()).subtract(canAdd);
         }
 
         existing.ifPresent(contents::remove);
-        contents.add(new StoredItem(existing.map(StoredItem::getIdentifier).orElse(UUID.randomUUID().toString()), itemQuantity.add(BigInteger.valueOf(stack.getAmount())), stack));
+        contents.add(new StoredItem(existing.map(StoredItem::getIdentifier).orElse(UUID.randomUUID().toString()), this.identifier, itemQuantity.add(BigInteger.valueOf(stack.getAmount())), stack));
 
         return BigInteger.ZERO;
     }
@@ -213,7 +213,7 @@ public class StorageDisk implements Identifiable {
 
         contents.remove(real);
         if (leftover.compareTo(BigInteger.ZERO) > 0) {
-            contents.add(new StoredItem(real.getIdentifier(), leftover, real.getItem()));
+            contents.add(new StoredItem(real.getIdentifier(), this.identifier, leftover, real.getItem()));
         }
     }
 

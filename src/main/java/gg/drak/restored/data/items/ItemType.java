@@ -17,6 +17,14 @@ public enum ItemType {
     DRIVE(BlockType.DRIVE),
     VIEWER(BlockType.VIEWER),
     CRAFTING_VIEWER(BlockType.CRAFTING_VIEWER),
+    EXTERNAL_STORAGE(BlockType.EXTERNAL_STORAGE),
+    IMPORTER(BlockType.IMPORTER),
+    EXPORTER(BlockType.EXPORTER),
+    CRAFTER(BlockType.CRAFTER),
+
+    // Upgrade Cards
+    SPEED_CARD,
+    STACK_CARD,
 
     // None
     NONE,

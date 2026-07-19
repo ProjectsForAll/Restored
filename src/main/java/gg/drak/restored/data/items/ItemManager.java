@@ -2,7 +2,6 @@ package gg.drak.restored.data.items;
 
 import gg.drak.restored.Restored;
 import gg.drak.restored.data.items.impl.*;
-import gg.drak.restored.data.items.impl.*;
 import lombok.Getter;
 import lombok.Setter;
 import org.bukkit.NamespacedKey;
@@ -58,6 +57,18 @@ public class ItemManager {
                 return new ViewerItem();
             case CRAFTING_VIEWER:
                 return new CraftingViewerItem();
+            case EXTERNAL_STORAGE:
+                return new ExternalStorageItem();
+            case IMPORTER:
+                return new ImporterItem();
+            case EXPORTER:
+                return new ExporterItem();
+            case CRAFTER:
+                return new CrafterItem();
+            case SPEED_CARD:
+                return new SpeedCardItem();
+            case STACK_CARD:
+                return new StackCardItem();
             case GENERIC_DISK:
                 Optional<BigInteger> capacity = readCapacity(stack);
                 Optional<String> identifier = readDiskIdentifier(stack);
@@ -115,6 +126,18 @@ public class ItemManager {
                     return Optional.of(new ViewerItem());
                 case CRAFTING_VIEWER:
                     return Optional.of(new CraftingViewerItem());
+                case EXTERNAL_STORAGE:
+                    return Optional.of(new ExternalStorageItem());
+                case IMPORTER:
+                    return Optional.of(new ImporterItem());
+                case EXPORTER:
+                    return Optional.of(new ExporterItem());
+                case CRAFTER:
+                    return Optional.of(new CrafterItem());
+                case SPEED_CARD:
+                    return Optional.of(new SpeedCardItem());
+                case STACK_CARD:
+                    return Optional.of(new StackCardItem());
                 case GENERIC_DISK:
                     if (args.length == 2) {
                         return Optional.of(new GenericDiskItem(ItemType.GENERIC_DISK, new BigInteger(args[0]), args[1]));

@@ -5,6 +5,7 @@ import host.plas.bou.gui.items.ItemData;
 import host.plas.bou.utils.ColorUtils;
 import gg.drak.restored.data.NetworkManager;
 import gg.drak.restored.serialization.PersistedItemCodec;
+import org.bukkit.Material;
 import lombok.Getter;
 import lombok.Setter;
 import mc.obliviate.inventory.Icon;
@@ -19,7 +20,7 @@ import java.util.UUID;
 @Getter @Setter
 public class StoredItem implements Identifiable {
     private String identifier; // in UUID format
-    private UUID networkUuid; // in UUID format
+    private String diskIdentifier; // UUID of the StorageDisk that owns this item
     private BigInteger amount;
     private ItemStack item;
 
@@ -27,18 +28,24 @@ public class StoredItem implements Identifiable {
         return UUID.fromString(identifier);
     }
 
-    public UUID getNetworkUuid() {
-        return UUID.fromString(identifier);
+    public StoredItem(String identifier, BigInteger amount, ItemStack item) {
+        this(identifier, null, amount, item);
     }
 
-    public StoredItem(String identifier, BigInteger amount, ItemStack item) {
+    public StoredItem(String identifier, String diskIdentifier, BigInteger amount, ItemStack item) {
         this.identifier = identifier;
+        this.diskIdentifier = diskIdentifier;
         this.amount = amount;
         this.item = flattenStack(item);
     }
 
     public StoredItem(ItemData data) {
+        this(data, null);
+    }
+
+    public StoredItem(ItemData data, String diskIdentifier) {
         this.identifier = data.getIdentifier();
+        this.diskIdentifier = diskIdentifier;
         this.amount = data.getAmount();
         this.item = flattenStack(PersistedItemCodec.deserializePayload(data.getData()));
     }
@@ -67,7 +74,13 @@ public class StoredItem implements Identifiable {
 
         ItemMeta meta = stack.getItemMeta();
         if (meta != null) {
-            meta.setDisplayName("§f" + meta.getDisplayName());
+            String name;
+            if (meta.hasDisplayName()) {
+                name = meta.getDisplayName();
+            } else {
+                name = formatMaterialName(stack.getType());
+            }
+            meta.setDisplayName(ColorUtils.colorizeHard("&f" + name));
             meta.setLore(getPageLore(stack));
 
             stack.setItemMeta(meta);
@@ -80,6 +93,16 @@ public class StoredItem implements Identifiable {
         });
 
         return icon;
+    }
+
+    private static String formatMaterialName(Material material) {
+        String[] words = material.name().toLowerCase().split("_");
+        StringBuilder sb = new StringBuilder();
+        for (String word : words) {
+            if (sb.length() > 0) sb.append(" ");
+            sb.append(Character.toUpperCase(word.charAt(0))).append(word.substring(1));
+        }
+        return sb.toString();
     }
 
     public List<String> getPageLore(ItemStack of) {

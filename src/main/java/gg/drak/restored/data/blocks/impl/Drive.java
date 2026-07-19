@@ -6,7 +6,6 @@ import host.plas.bou.gui.InventorySheet;
 import host.plas.bou.gui.icons.BasicIcon;
 import host.plas.bou.gui.screens.blocks.ScreenBlock;
 import host.plas.bou.gui.screens.events.BlockCloseEvent;
-import host.plas.bou.gui.slots.Slot;
 import host.plas.bou.items.ItemUtils;
 import host.plas.bou.utils.ColorUtils;
 import gg.drak.restored.data.Network;
@@ -35,12 +34,17 @@ import org.bukkit.inventory.ItemStack;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.concurrent.atomic.AtomicReference;
 
 @Getter @Setter
 public class Drive extends NetworkBlock implements InventoryBlock {
+    private static final int DISK_SLOT_COUNT = 9; // Slots 0-8 for disks
+    private static final int PRIORITY_SLOT = 13; // Center of bottom row
+
     private ConcurrentSkipListMap<Integer, StorageDisk> disks; // Set of disks in the drive
+    private int priority = 0;
 
     public Drive(Network network, Location location) {
         super(BlockType.DRIVE, network, location, DriveItem::new);
@@ -59,6 +63,9 @@ public class Drive extends NetworkBlock implements InventoryBlock {
         disks = new ConcurrentSkipListMap<>();
 
         JsonObject data = getData();
+        if (data.has("priority")) {
+            this.priority = data.get("priority").getAsInt();
+        }
         if (data.has("disks")) {
             JsonObject disksJson = data.getAsJsonObject("disks");
             disksJson.entrySet().forEach(entry -> {
@@ -73,6 +80,7 @@ public class Drive extends NetworkBlock implements InventoryBlock {
     }
 
     public void onSaveSpecific() {
+        getData().addProperty("priority", priority);
         JsonObject disksJson = new JsonObject();
         disks.forEach((i, d) -> {
             if (d != null) {
@@ -91,31 +99,62 @@ public class Drive extends NetworkBlock implements InventoryBlock {
             sheet.addIcon(i, new BasicIcon(new ItemStack(Material.AIR)));
         }
 
-        // Iterate over slots and build icons for disks
-        sheet.forEachSlot(this::buildDriveIcon);
+        // Disk slots (0-8)
+        for (int i = 0; i < DISK_SLOT_COUNT; i++) {
+            final int index = i;
+            getDisk(index).ifPresent(disk -> {
+                ItemStack stack = disk.getItem();
+                Icon icon = new Icon(stack);
+                sheet.setIcon(index, icon);
+
+                icon.onClick(event -> {
+                    Player p = (Player) event.getWhoClicked();
+                    removeDisk(index);
+                    p.getInventory().addItem(stack);
+                    redraw();
+                });
+            });
+        }
+
+        // Bottom row: glass panes as fillers, priority controls in center
+        for (int i = 9; i < 18; i++) {
+            if (i != PRIORITY_SLOT && i != PRIORITY_SLOT - 1 && i != PRIORITY_SLOT + 1) {
+                sheet.setIcon(i, new Icon(new ItemStack(Material.BLACK_STAINED_GLASS_PANE)));
+            }
+        }
+
+        // Priority down button (slot 12)
+        ItemStack downItem = ItemUtils.make(Material.RED_STAINED_GLASS_PANE, ColorUtils.colorizeHard("&c- Priority"));
+        Icon downIcon = new Icon(downItem);
+        downIcon.onClick(event -> {
+            priority--;
+            onSave();
+            redraw();
+        });
+        sheet.setIcon(PRIORITY_SLOT - 1, downIcon);
+
+        // Priority display (slot 13)
+        String color = priority > 0 ? "&a" : (priority < 0 ? "&c" : "&7");
+        ItemStack priorityItem = ItemUtils.make(Material.COMPARATOR, ColorUtils.colorizeHard("&ePriority: " + color + priority));
+        Icon priorityIcon = new Icon(priorityItem);
+        priorityIcon.onClick(event -> {
+            priority = 0;
+            onSave();
+            redraw();
+        });
+        sheet.setIcon(PRIORITY_SLOT, priorityIcon);
+
+        // Priority up button (slot 14)
+        ItemStack upItem = ItemUtils.make(Material.LIME_STAINED_GLASS_PANE, ColorUtils.colorizeHard("&a+ Priority"));
+        Icon upIcon = new Icon(upItem);
+        upIcon.onClick(event -> {
+            priority++;
+            onSave();
+            redraw();
+        });
+        sheet.setIcon(PRIORITY_SLOT + 1, upIcon);
 
         return sheet;
-    }
-
-    public void buildDriveIcon(Slot slot) {
-        int index = slot.getIndex();
-
-        getDisk(index).ifPresentOrElse(disk -> {
-            ItemStack stack = disk.getItem();
-            Icon i = new Icon(stack);
-            slot.setIcon(i);
-
-            i.onClick(event -> {
-                Player player = (Player) event.getWhoClicked();
-                
-                removeDisk(index);
-                player.getInventory().addItem(stack);
-                
-                redraw();
-            });
-        }, () -> {
-            // slot.setIcon(null); // Clear icon if no disk
-        });
     }
 
     public void removeDisk(int index) {
@@ -175,7 +214,7 @@ public class Drive extends NetworkBlock implements InventoryBlock {
 
         // Find the first empty slot
         int index = -1;
-        for (int i = 0; i < getType().getSlots(); i++) {
+        for (int i = 0; i < DISK_SLOT_COUNT; i++) {
             if (! disks.containsKey(i)) {
                 index = i;
                 break;

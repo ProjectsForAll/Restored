@@ -6,6 +6,7 @@ import host.plas.bou.gui.ScreenManager;
 import host.plas.bou.gui.icons.BasicIcon;
 import host.plas.bou.gui.screens.ScreenInstance;
 import host.plas.bou.gui.screens.blocks.ScreenBlock;
+import gg.drak.restored.gui.NetworkGuiScreenInstance;
 import host.plas.bou.items.ItemUtils;
 import host.plas.bou.utils.ColorUtils;
 import gg.drak.restored.Restored;
@@ -38,6 +39,11 @@ public class Viewer extends NetworkBlock implements InventoryBlock {
 
     public Viewer(java.util.UUID uuid, Network network, Location location, com.google.gson.JsonObject data) {
         super(BlockType.VIEWER, uuid, network, location, ViewerItem::new, data);
+    }
+
+    @Override
+    protected ScreenInstance createScreenInstance(Player player, InventorySheet inventorySheet) {
+        return new NetworkGuiScreenInstance(player, getType(), inventorySheet, slot -> false, this::tryAddItem);
     }
 
     @Override

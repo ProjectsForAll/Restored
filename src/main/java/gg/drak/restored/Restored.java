@@ -11,6 +11,7 @@ import gg.drak.restored.data.NetworkManager;
 import gg.drak.restored.data.blocks.NetworkMap;
 import gg.drak.restored.events.MainListener;
 import gg.drak.restored.timers.NetworkSaveTimer;
+import gg.drak.restored.timers.NetworkTickTimer;
 import lombok.Getter;
 import lombok.Setter;
 import org.bukkit.entity.Player;
@@ -33,6 +34,8 @@ public final class Restored extends BetterPlugin {
 
     @Getter @Setter
     private static NetworkSaveTimer networkSaveTimer;
+    @Getter @Setter
+    private static NetworkTickTimer networkTickTimer;
 
     @Getter @Setter
     private static DatabaseConfig databaseConfig;
@@ -59,6 +62,7 @@ public final class Restored extends BetterPlugin {
         setNetworkPermissionsCMD(new NetworkPermissionsCMD());
 
         setNetworkSaveTimer(new NetworkSaveTimer());
+        setNetworkTickTimer(new NetworkTickTimer());
 
         NetworkMap.init();
     }

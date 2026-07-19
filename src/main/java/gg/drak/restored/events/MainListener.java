@@ -9,11 +9,13 @@ import gg.drak.restored.data.blocks.impl.CraftingViewer;
 import gg.drak.restored.data.blocks.impl.Drive;
 import gg.drak.restored.data.blocks.impl.Viewer;
 import gg.drak.restored.data.blocks.inventory.InventoryBlock;
+import gg.drak.restored.gui.NetworkGuiScreenInstance;
 import org.bukkit.entity.HumanEntity;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
+import org.bukkit.block.Block;
 import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.event.block.BlockPlaceEvent;
 import org.bukkit.event.inventory.*;
@@ -22,6 +24,7 @@ import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -104,9 +107,6 @@ public class MainListener implements Listener {
 
             // If clicking in the bottom inventory (player inventory) and top is a network screen
             if (! screen.getInventory().equals(inventory)) {
-                if (screen.getScreenBlock().orElse(null) instanceof CraftingViewer) {
-                    return;
-                }
                 if (handlePutItem(event, PutType.SHIFT_CLICK_FROM_OWN, action)) {
                     event.setCancelled(true);
                 }
@@ -149,10 +149,11 @@ public class MainListener implements Listener {
      * Crafting grid must use vanilla placement; viewer pagination row is UI-only.
      */
     private static boolean shouldSkipManualDeposit(ScreenInstance screen, int rawSlot) {
+        if (screen instanceof NetworkGuiScreenInstance gui && gui.isVanillaPlaceSlot(rawSlot)) {
+            return true;
+        }
+
         return screen.getScreenBlock().map(block -> {
-            if (block instanceof CraftingViewer) {
-                return CraftingViewer.isCraftingSlot(rawSlot);
-            }
             if (block instanceof Viewer) {
                 return rawSlot >= 45;
             }
@@ -212,10 +213,12 @@ public class MainListener implements Listener {
                                 int newCursorAmount = cursor.getAmount() - inserted;
                                 if (newCursorAmount <= 0) {
                                     event.setCursor(null);
+                                    player.setItemOnCursor(null);
                                 } else {
                                     ItemStack nextCursor = cursor.clone();
                                     nextCursor.setAmount(newCursorAmount);
                                     event.setCursor(nextCursor);
+                                    player.setItemOnCursor(nextCursor);
                                 }
                                 break;
                             case SHIFT_CLICK_FROM_OWN:
@@ -223,20 +226,21 @@ public class MainListener implements Listener {
                                 if (itemToShift == null || itemToShift.getType().isAir()) return;
 
                                 ItemStack shiftLeft = itemToShift.clone();
-
-                                while (shiftLeft != null && shiftLeft.getAmount() > 0) {
-                                    int beforeAmount = shiftLeft.getAmount();
-                                    shiftLeft = invBlock.tryAddItem(shiftLeft);
-                                    if (shiftLeft != null && shiftLeft.getAmount() == beforeAmount) {
-                                        break;
-                                    }
-                                    handled.set(true);
+                                int beforeAmount = shiftLeft.getAmount();
+                                shiftLeft = invBlock.tryAddItem(shiftLeft);
+                                int leftoverAmount = shiftLeft != null ? shiftLeft.getAmount() : 0;
+                                if (leftoverAmount == beforeAmount) {
+                                    return;
                                 }
+                                handled.set(true);
 
-                                if (shiftLeft == null || shiftLeft.getAmount() == 0) {
+                                int rawSlot = event.getRawSlot();
+                                if (leftoverAmount <= 0) {
                                     event.setCurrentItem(null);
+                                    event.getView().setItem(rawSlot, null);
                                 } else {
                                     event.setCurrentItem(shiftLeft);
+                                    event.getView().setItem(rawSlot, shiftLeft);
                                 }
                                 break;
                         }
@@ -249,6 +253,34 @@ public class MainListener implements Listener {
             }
         });
         return handled.get();
+    }
+
+    /**
+     * Prevent vanilla hopper mechanics from moving items into or out of blocks
+     * that are network blocks (e.g. Importer uses HOPPER material).
+     * Without this, items thrown into the hopper get sucked into its internal
+     * inventory and are never seen by the Importer tick logic.
+     */
+    @EventHandler(priority = EventPriority.HIGHEST)
+    public void onHopperMoveItem(InventoryMoveItemEvent event) {
+        Inventory source = event.getSource();
+        Inventory destination = event.getDestination();
+
+        if (isNetworkBlockInventory(source) || isNetworkBlockInventory(destination)) {
+            event.setCancelled(true);
+        }
+    }
+
+    private boolean isNetworkBlockInventory(Inventory inventory) {
+        if (inventory == null) return false;
+        if (inventory.getHolder() == null) return false;
+        if (!(inventory.getHolder() instanceof org.bukkit.block.BlockState)) return false;
+
+        org.bukkit.block.BlockState state = (org.bukkit.block.BlockState) inventory.getHolder();
+        Block block = state.getBlock();
+
+        Optional<NetworkBlock> networkBlock = NetworkManager.getNetworkBlockAt(block);
+        return networkBlock.isPresent();
     }
 
     public enum PutType {

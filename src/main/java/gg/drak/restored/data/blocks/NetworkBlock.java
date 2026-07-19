@@ -10,6 +10,7 @@ import host.plas.bou.gui.screens.events.BlockRedrawEvent;
 import gg.drak.restored.Restored;
 import gg.drak.restored.data.Network;
 import gg.drak.restored.data.blocks.impl.Controller;
+import gg.drak.restored.timers.NetworkTickTimer;
 import gg.drak.restored.data.items.RestoredItem;
 import lombok.Getter;
 import lombok.Setter;
@@ -135,6 +136,8 @@ public abstract class NetworkBlock extends ScreenBlock {
     }
 
     public void clean() {
+        NetworkTickTimer.removeCounter(getIdentifier());
+
         network.ifPresent(value -> value.removeBlock(this));
         network = Optional.empty();
 
