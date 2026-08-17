@@ -9,6 +9,7 @@ import gg.drak.restored.items.ChestLinkingToolItem;
 import gg.drak.restored.items.NetworkChestItem;
 import gg.drak.restored.items.NetworkUpgradeItem;
 import gg.drak.restored.items.PocketLinkItem;
+import gg.drak.restored.items.RestoredItems;
 import gg.drak.restored.util.LegacyColors;
 import gg.drak.restored.util.LinkedChestStorage;
 import gg.drak.restored.util.NetworkBlockTags;
@@ -42,6 +43,16 @@ public class MainListener implements Listener {
     public MainListener() {
         Restored.getInstance().registerListener(this);
         Restored.getInstance().logInfo("Registered MainListener!");
+    }
+
+    @EventHandler(priority = EventPriority.LOWEST)
+    public void preventNonPlaceableRestoredItems(BlockPlaceEvent event) {
+        ItemStack item = event.getItemInHand();
+        if (!RestoredItems.isRestoredItem(item) || NetworkChestItem.isType(item)) {
+            return;
+        }
+        event.setCancelled(true);
+        event.getPlayer().sendMessage(LegacyColors.color("#FF5555This Restored item cannot be placed."));
     }
 
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)

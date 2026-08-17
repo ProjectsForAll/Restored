@@ -42,7 +42,7 @@ public final class RecipeIngredientResolver {
 
         return switch (lower) {
             case "network_core", "core" -> NetworkCoreItem.create();
-            case "network_chest", "chest" -> NetworkChestItem.create();
+            case "network_chest" -> NetworkChestItem.create();
             case "network_component", "component" -> NetworkComponentItem.create();
             case "network_upgrade", "upgrade" -> NetworkUpgradeItem.create();
             case "augment_component" -> AugmentComponentItem.create();
@@ -111,7 +111,7 @@ public final class RecipeIngredientResolver {
             return false;
         }
         String lower = id.trim().toLowerCase(Locale.ROOT);
-        if (lower.startsWith("network_") || lower.equals("core") || lower.equals("chest")
+        if (lower.startsWith("network_") || lower.equals("core")
                 || lower.equals("component") || lower.equals("upgrade")
                 || lower.equals("augment_component") || lower.startsWith("augment_")
                 || lower.equals("pocket_link") || lower.equals("pocket_augment")
@@ -133,7 +133,6 @@ public final class RecipeIngredientResolver {
         String lower = id.trim().toLowerCase(Locale.ROOT);
         return switch (lower) {
             case "core" -> "network_core";
-            case "chest" -> "network_chest";
             case "component" -> "network_component";
             case "upgrade" -> "network_upgrade";
             case "pocket_augment_feeding" -> "feeding_augment";
