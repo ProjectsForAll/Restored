@@ -4,158 +4,151 @@ import gg.drak.restored.Restored;
 import gg.drak.restored.database.MainOperator;
 import gg.drak.restored.database.Statements;
 import lombok.Getter;
-import lombok.Setter;
 
-import java.sql.SQLException;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
 
-/**
- * Data Access Object for Network operations.
- */
 @Getter
 public class NetworkDAO {
     private final MainOperator operator;
-    
+
     public NetworkDAO(MainOperator operator) {
         this.operator = operator;
     }
-    
-    /**
-     * Insert or update a network in the database.
-     * @param identifier Network UUID
-     * @param ownerUuid Owner player UUID
-     */
-    public void insert(String identifier, String ownerUuid) {
+
+    public void save(NetworkData data) {
         try {
             operator.ensureUsable();
-            
             String statement = Statements.getStatement(Statements.StatementType.INSERT_NETWORK, operator.getConnectorSet());
-
             operator.execute(statement, stmt -> {
                 try {
-                    stmt.setString(1, identifier);
-                    stmt.setString(2, ownerUuid);
+                    stmt.setString(1, data.identifier);
+                    stmt.setString(2, data.ownerUuid);
+                    stmt.setString(3, data.world);
+                    if (data.world == null) {
+                        stmt.setNull(4, java.sql.Types.INTEGER);
+                        stmt.setNull(5, java.sql.Types.INTEGER);
+                        stmt.setNull(6, java.sql.Types.INTEGER);
+                    } else {
+                        stmt.setInt(4, data.x);
+                        stmt.setInt(5, data.y);
+                        stmt.setInt(6, data.z);
+                    }
+                    stmt.setInt(7, data.upgradeCount);
+                    stmt.setLong(8, data.totalOpens);
                 } catch (Exception e) {
-                    Restored.getInstance().logSevere("Failed to set values for INSERT_NETWORK statement", e);
                     throw new RuntimeException(e);
                 }
             });
         } catch (Exception e) {
-            Restored.getInstance().logSevere("Failed to insert or update network with identifier: " + identifier, e);
+            Restored.getInstance().logSevere("Failed to save network " + data.identifier, e);
         }
     }
-    
-    /**
-     * Delete a network from the database.
-     * @param identifier Network UUID
-     */
+
     public void delete(String identifier) {
         try {
             operator.ensureUsable();
-            
-            // Remove from cache immediately
-            operator.getMiddleware().removeNetworkFromCache(identifier);
-
             String statement = Statements.getStatement(Statements.StatementType.DELETE_NETWORK, operator.getConnectorSet());
-
             operator.execute(statement, stmt -> {
                 try {
                     stmt.setString(1, identifier);
                 } catch (Exception e) {
-                    Restored.getInstance().logSevere("Failed to set values for DELETE_NETWORK statement", e);
                     throw new RuntimeException(e);
                 }
             });
         } catch (Exception e) {
-            Restored.getInstance().logSevere("Failed to delete network with identifier: " + identifier, e);
+            Restored.getInstance().logSevere("Failed to delete network " + identifier, e);
         }
     }
-    
-    /**
-     * Get a network by identifier.
-     * @param identifier Network UUID
-     * @return Optional containing NetworkData if found
-     */
+
     public Optional<NetworkData> getById(String identifier) {
         try {
             operator.ensureUsable();
-
             String statement = Statements.getStatement(Statements.StatementType.GET_NETWORK, operator.getConnectorSet());
-
             AtomicReference<Optional<NetworkData>> ref = new AtomicReference<>(Optional.empty());
-
             operator.executeQuery(statement, stmt -> {
                 try {
                     stmt.setString(1, identifier);
                 } catch (Exception e) {
-                    Restored.getInstance().logSevere("Failed to set values for GET_NETWORK statement", e);
                     throw new RuntimeException(e);
                 }
             }, rs -> {
                 try {
                     if (rs.next()) {
-                        NetworkData data = new NetworkData(
-                                rs.getString("Identifier"),
-                                rs.getString("OwnerUuid")
-                        );
-                        
-                        ref.set(Optional.of(data));
+                        ref.set(Optional.of(readRow(rs)));
                     }
                 } catch (Exception e) {
-                    Restored.getInstance().logSevere("Failed to read values from GET_NETWORK result set", e);
+                    Restored.getInstance().logSevere("Failed to read network " + identifier, e);
                 }
             });
-
             return ref.get();
         } catch (Exception e) {
-            Restored.getInstance().logSevere("Failed to get network with identifier: " + identifier, e);
+            Restored.getInstance().logSevere("Failed to get network " + identifier, e);
             return Optional.empty();
         }
     }
 
-    /**
-     * Get all networks from the database.
-     * @return List of NetworkData
-     */
-    public java.util.List<NetworkData> getAll() {
+    public List<NetworkData> getAll() {
         try {
             operator.ensureUsable();
-
             String statement = Statements.getStatement(Statements.StatementType.GET_ALL_NETWORKS, operator.getConnectorSet());
-
-            java.util.List<NetworkData> networks = new java.util.ArrayList<>();
-
+            List<NetworkData> networks = new ArrayList<>();
             operator.executeQuery(statement, stmt -> {}, rs -> {
                 try {
                     while (rs.next()) {
-                        NetworkData data = new NetworkData(
-                                rs.getString("Identifier"),
-                                rs.getString("OwnerUuid")
-                        );
-                        networks.add(data);
+                        networks.add(readRow(rs));
                     }
                 } catch (Exception e) {
-                    Restored.getInstance().logSevere("Failed to read values from GET_ALL_NETWORKS result set", e);
+                    Restored.getInstance().logSevere("Failed to read all networks", e);
                 }
             });
-
             return networks;
         } catch (Exception e) {
             Restored.getInstance().logSevere("Failed to get all networks", e);
-            return new java.util.ArrayList<>();
+            return new ArrayList<>();
         }
     }
-    
+
+    private NetworkData readRow(java.sql.ResultSet rs) throws java.sql.SQLException {
+        String world = rs.getString("World");
+        int x = rs.getInt("X");
+        int y = rs.getInt("Y");
+        int z = rs.getInt("Z");
+        if (rs.wasNull() || world == null || world.isEmpty()) {
+            world = null;
+        }
+        return new NetworkData(
+                rs.getString("Identifier"),
+                rs.getString("OwnerUuid"),
+                world,
+                x, y, z,
+                rs.getInt("UpgradeCount"),
+                rs.getLong("TotalOpens")
+        );
+    }
+
     @Getter
-    @Setter
     public static class NetworkData {
         private final String identifier;
         private final String ownerUuid;
-        
-        public NetworkData(String identifier, String ownerUuid) {
+        private final String world;
+        private final int x;
+        private final int y;
+        private final int z;
+        private final int upgradeCount;
+        private final long totalOpens;
+
+        public NetworkData(String identifier, String ownerUuid, String world, int x, int y, int z, int upgradeCount, long totalOpens) {
             this.identifier = identifier;
             this.ownerUuid = ownerUuid;
+            this.world = world;
+            this.x = x;
+            this.y = y;
+            this.z = z;
+            this.upgradeCount = upgradeCount;
+            this.totalOpens = totalOpens;
         }
     }
 }

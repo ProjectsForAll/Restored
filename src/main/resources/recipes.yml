@@ -1,0 +1,218 @@
+# Restored crafting recipes
+# result / ingredient ids:
+#   - Restored items: network_core, network_chest, network_component, network_upgrade,
+#     augment_component, augment_crafting, augment_smelting, ...
+#   - Vanilla materials: GLASS, REDSTONE, OAK_PLANKS, etc.
+#   - Any wood planks: PLANKS (Tag.PLANKS — all wood/nether plank types)
+#   - Soft-dep custom items: itemsadder:namespace:id, nexo:id, mythic:id
+
+recipes:
+  network_core:
+    enabled: true
+    type: shaped
+    result: network_core
+    shape:
+      - "GRG"
+      - "RNR"
+      - "GRG"
+    ingredients:
+      G: GLASS
+      R: REDSTONE
+      N: NETHER_STAR
+
+  network_chest:
+    enabled: true
+    type: shaped
+    result: network_chest
+    shape:
+      - "PPP"
+      - "PCP"
+      - "PPP"
+    ingredients:
+      P: PLANKS
+      C: network_core
+
+  network_component:
+    enabled: true
+    type: shapeless
+    result: network_component
+    ingredients:
+      - IRON_INGOT
+      - REDSTONE
+
+  network_upgrade:
+    enabled: true
+    type: shapeless
+    result: network_upgrade
+    ingredients:
+      - network_component
+      - REDSTONE
+      - GOLD_INGOT
+
+  augment_component:
+    enabled: true
+    type: shapeless
+    result: augment_component
+    ingredients:
+      - network_upgrade
+      - QUARTZ
+
+  augment_crafting:
+    enabled: true
+    type: shapeless
+    result: augment_crafting
+    ingredients:
+      - augment_component
+      - CRAFTING_TABLE
+
+  augment_smelting:
+    enabled: true
+    type: shapeless
+    result: augment_smelting
+    ingredients:
+      - augment_component
+      - FURNACE
+
+  augment_blasting:
+    enabled: true
+    type: shapeless
+    result: augment_blasting
+    ingredients:
+      - augment_component
+      - BLAST_FURNACE
+
+  augment_smoking:
+    enabled: true
+    type: shapeless
+    result: augment_smoking
+    ingredients:
+      - augment_component
+      - SMOKER
+
+  augment_grindstone:
+    enabled: true
+    type: shapeless
+    result: augment_grindstone
+    ingredients:
+      - augment_component
+      - GRINDSTONE
+
+  augment_anvil:
+    enabled: true
+    type: shapeless
+    result: augment_anvil
+    ingredients:
+      - augment_component
+      - ANVIL
+
+  augment_smithing:
+    enabled: true
+    type: shapeless
+    result: augment_smithing
+    ingredients:
+      - augment_component
+      - SMITHING_TABLE
+
+  augment_stonecutter:
+    enabled: true
+    type: shapeless
+    result: augment_stonecutter
+    ingredients:
+      - augment_component
+      - STONECUTTER
+
+  augment_loom:
+    enabled: true
+    type: shapeless
+    result: augment_loom
+    ingredients:
+      - augment_component
+      - LOOM
+
+  augment_cartography:
+    enabled: true
+    type: shapeless
+    result: augment_cartography
+    ingredients:
+      - augment_component
+      - CARTOGRAPHY_TABLE
+
+  augment_brewing:
+    enabled: true
+    type: shapeless
+    result: augment_brewing
+    ingredients:
+      - augment_component
+      - BREWING_STAND
+
+  augment_enchanting:
+    enabled: true
+    type: shapeless
+    result: augment_enchanting
+    ingredients:
+      - augment_component
+      - ENCHANTING_TABLE
+
+  pocket_link:
+    enabled: true
+    type: shapeless
+    result: pocket_link
+    ingredients:
+      - augment_component
+      - BUNDLE
+      - CRAFTING_TABLE
+
+  pocket_augment:
+    enabled: true
+    type: shapeless
+    result: pocket_augment
+    ingredients:
+      - augment_component
+      - BUNDLE
+
+  feeding_augment:
+    enabled: true
+    type: shapeless
+    result: feeding_augment
+    ingredients:
+      - pocket_augment
+      - GOLDEN_CARROT
+      - GOLDEN_APPLE
+      - DIAMOND_SHOVEL
+
+  quiver_augment:
+    enabled: true
+    type: shapeless
+    result: quiver_augment
+    ingredients:
+      - pocket_augment
+      - BOW
+      - ARROW
+
+  backpack_augment:
+    enabled: true
+    type: shapeless
+    result: backpack_augment
+    ingredients:
+      - pocket_augment
+      - CHEST
+
+  augment_enderchest:
+    enabled: true
+    type: shapeless
+    result: augment_enderchest
+    ingredients:
+      - augment_component
+      - ENDER_CHEST
+
+  chest_linking_tool:
+    enabled: true
+    type: shaped
+    result: chest_linking_tool
+    shape:
+      - " X "
+      - " S "
+      - " S "
+    ingredients:
+      X: network_component
+      S: STICK

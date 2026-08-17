@@ -1,626 +1,541 @@
 package gg.drak.restored.data;
 
 import gg.drak.restored.Restored;
-import gg.drak.restored.data.blocks.BlockLocation;
-import gg.drak.restored.data.blocks.LocatedBlock;
-import gg.drak.restored.data.blocks.NetworkMap;
-import gg.drak.restored.data.blocks.SingleNetworkMap;
-import gg.drak.restored.data.blocks.impl.*;
-import gg.drak.restored.data.blocks.NetworkBlock;
-import gg.drak.restored.data.disks.StorageDisk;
-import gg.drak.restored.data.items.impl.*;
-import gg.drak.restored.data.permission.PermissionNode;
-import gg.drak.restored.data.permission.PermissionSystem;
-import gg.drak.restored.data.screens.items.StoredItem;
-import gg.drak.restored.data.screens.items.ViewerPage;
-import gg.drak.restored.database.dao.PermissionDAO;
+import gg.drak.restored.serialization.PersistedItemCodec;
+import gg.drak.restored.util.LinkedChestStorage;
+import gg.drak.restored.util.NetworkBlockTags;
+import host.plas.bou.gui.items.ItemData;
+import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.Setter;
 import org.bukkit.Bukkit;
+import org.bukkit.Location;
 import org.bukkit.OfflinePlayer;
 import org.bukkit.block.Block;
-import org.bukkit.block.BlockFace;
-import org.bukkit.entity.Player;
-import org.bukkit.event.block.BlockBreakEvent;
-import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.inventory.ItemStack;
 
 import java.math.BigInteger;
-import java.sql.SQLException;
-import java.util.*;
-import java.util.concurrent.ConcurrentSkipListSet;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.EnumSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 @Getter @Setter
-public class Network implements Comparable<Network> {
-    private String identifier; // in UUID format
-    private String ownerUuid; // Owner of the network
-    private Controller controller; // Location of the start of the network
+public class Network {
+    private static final Comparator<StoredStack> STORED_STACK_COMPARATOR = new StoredStackComparator();
 
-    private PermissionSystem permissionSystem;
+    private final UUID identifier;
+    private UUID ownerUuid;
+    private String world;
+    private int x;
+    private int y;
+    private int z;
+    private int upgradeCount;
+    private int enchantingBookshelves;
+    private final ConcurrentHashMap<String, StoredStack> items = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<UUID, NetworkRole> roles = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<UUID, Long> openCounts = new ConcurrentHashMap<>();
+    @Getter(AccessLevel.NONE)
+    private final Set<AugmentType> installedAugments = ConcurrentHashMap.newKeySet();
+    /** Location keys (`world:x:y:z`) of linked vanilla storage chests. */
+    @Getter(AccessLevel.NONE)
+    private final Set<String> linkedChestKeys = ConcurrentHashMap.newKeySet();
+    /** Runtime workstation GUI slot state — not DB-persisted. */
+    @Getter(AccessLevel.NONE)
+    private final ConcurrentHashMap<AugmentType, WorkstationSession> workstationSessions = new ConcurrentHashMap<>();
+    private final AtomicBoolean dirty = new AtomicBoolean(false);
 
-    private ConcurrentSkipListSet<NetworkBlock> cachedBlocks;
-    private Date lastCacheUpdate;
-
-    public UUID getUuid() {
-        return UUID.fromString(identifier);
-    }
-
-    public OfflinePlayer getOwner() {
-        UUID uuid = UUID.fromString(ownerUuid);
-        return Bukkit.getOfflinePlayer(uuid);
-    }
-
-    public Network(String identifier, String ownerUuid) {
+    public Network(UUID identifier, UUID ownerUuid) {
         this.identifier = identifier;
         this.ownerUuid = ownerUuid;
-        this.permissionSystem = new PermissionSystem(this);
-
-        this.cachedBlocks = new ConcurrentSkipListSet<>();
-
-        // Cache in middleware immediately
-        Restored.getDatabase().getMiddleware().cacheNetwork(this);
-
-        // Save to database immediately to avoid foreign key constraint issues when blocks are added
-        save();
     }
 
-    public void save() {
-        // Save to database
-        Restored.getDatabase().getNetworkDAO().insert(identifier, ownerUuid);
+    public String getIdentifierString() {
+        return identifier.toString();
     }
 
-    public Network(String identifier, Block controller, Player owner) {
-        this(identifier, owner.getUniqueId().toString());
-
-        Controller c = new Controller(this, controller.getLocation());
-        this.controller = c;
-        // Do not call updateCache here, it will be called when needed
-        c.onPlaced();
+    public int getCapacity() {
+        return 64 * upgradeCount;
     }
 
-    public Network(Block controller, Player owner) {
-        this(NetworkMap.generateUUID(), controller, owner);
+    public boolean isPlaced() {
+        return world != null && !world.isEmpty();
     }
 
-    public void init() {
-        // Load permission system from database
-        List<PermissionDAO.PermissionData> permissions =
-                Restored.getDatabase().getPermissionDAO().getByNetworkId(identifier);
-
-        for (PermissionDAO.PermissionData perm : permissions) {
-            if (perm.getValue()) {
-                permissionSystem.trust(
-                        perm.getPermissionNode(),
-                        perm.getPlayerUuid()
-                );
-            }
+    public Location getLocation() {
+        if (!isPlaced()) {
+            return null;
         }
+        return new Location(Bukkit.getWorld(world), x, y, z);
     }
 
-    public ConcurrentSkipListSet<NetworkBlock> getConnectedBlocks() {
-        ConcurrentSkipListSet<NetworkBlock> connectedBlocks = new ConcurrentSkipListSet<>();
-
-        // iterate out from the controller
-        // and add all blocks to the list
-        // that are connected to the controller
-        // that are also not already in the list
-        // and that are network blocks.
-        // Include the controller in the list.
-        Controller controller = getController();
-        if (controller == null) {
-            Restored.getInstance().logWarning("Controller is null");
-            return connectedBlocks;
-        }
-
-        connectedBlocks.add(controller);
-        Block controllerBlock = getController().getBlock();
-        BlockFace[] faces = new BlockFace[] {
-                BlockFace.NORTH,
-                BlockFace.EAST,
-                BlockFace.SOUTH,
-                BlockFace.WEST,
-                BlockFace.UP,
-                BlockFace.DOWN
-        };
-
-        iterateConnected(faces, controllerBlock, connectedBlocks);
-
-        return connectedBlocks;
-    }
-
-    public ConcurrentSkipListSet<NetworkBlock> getBlocks() {
-        if (controller == null) {
-            // Try to find the controller if it's missing
-            getNetworkMap().getControllerImpl(Optional.of(this)).ifPresent(this::setController);
-        }
-
-        if (cachedBlocks == null || lastCacheUpdate == null) {
-            updateCache();
+    public void setLocation(Location location) {
+        if (location == null || location.getWorld() == null) {
+            this.world = null;
+            this.x = 0;
+            this.y = 0;
+            this.z = 0;
         } else {
-            // if is greater than 5 seconds ago
-            if (lastCacheUpdate.before(new Date(System.currentTimeMillis() - (50 * 20 * 5)))) {
-                updateCache();
-            }
+            this.world = location.getWorld().getName();
+            this.x = location.getBlockX();
+            this.y = location.getBlockY();
+            this.z = location.getBlockZ();
         }
-
-        return cachedBlocks;
+        markDirty();
     }
 
-    public void updateCache() {
-        ConcurrentSkipListSet<NetworkBlock> newBlocks = getConnectedBlocks();
-        
-        // Ensure all blocks in the new set know they belong to this network
-        newBlocks.forEach(block -> block.setNetwork(Optional.of(this)));
-
-        // Replace the old cache with the new one to avoid stale instances
-        this.cachedBlocks = newBlocks;
-
-        lastCacheUpdate = new Date();
+    public void clearLocation() {
+        setLocation(null);
     }
 
-    public void iterateConnected(BlockFace[] faces, Block iteratingBlock, ConcurrentSkipListSet<NetworkBlock> connectedBlocks) {
-        for (BlockFace face : faces) {
-            Block relative = iteratingBlock.getRelative(face);
-
-            BlockLocation relLoc = gg.drak.restored.data.blocks.BlockLocation.of(relative);
-            
-            // Check if already in the list to avoid infinite recursion
-            boolean alreadyProcessed = false;
-            for (NetworkBlock b : connectedBlocks) {
-                if (b.getBlockLocation().equals(relLoc)) {
-                    alreadyProcessed = true;
-                    break;
-                }
-            }
-            if (alreadyProcessed) continue;
-
-            Optional<LocatedBlock> locatedBlock = NetworkMap.getLocatedBlock(relLoc);
-            if (locatedBlock.isPresent()) {
-                // Check if we already have an instance in our global cache
-                Optional<NetworkBlock> blockOptional = getNetworkBlock(relLoc);
-                
-                if (blockOptional.isEmpty()) {
-                    blockOptional = NetworkManager.createNetworkBlock(this, locatedBlock.get());
-                }
-
-                if (blockOptional.isPresent()) {
-                    NetworkBlock block = blockOptional.get();
-                    block.setNetwork(Optional.of(this)); // Ensure the block knows its network
-
-                    connectedBlocks.add(block);
-                    iterateConnected(faces, relative, connectedBlocks);
-                }
-            }
+    public long getTotalItems() {
+        long total = 0;
+        for (StoredStack stack : items.values()) {
+            total += stack.getAmount();
         }
+        return total;
     }
 
-    public SingleNetworkMap getNetworkMap() {
-        Optional<SingleNetworkMap> map = NetworkMap.getNetworkMap(identifier);
-        if (map.isPresent()) return map.get();
-        
-        // Create new map if it doesn't exist
-        SingleNetworkMap newMap = new SingleNetworkMap(identifier, ownerUuid, new ConcurrentSkipListSet<>());
-        NetworkMap.loadSingleMap(newMap);
-        return newMap;
+    public int getDifferedItemCount() {
+        return items.size();
     }
 
-    public void removeBlock(NetworkBlock block) {
-        cachedBlocks.remove(block);
-        getNetworkMap().removeLocatedBlock(block.getIdentifier());
-        getNetworkMap().save();
-    }
-
-    public List<StorageDisk> getDisks() {
-        List<StorageDisk> disks = new ArrayList<>();
-
-        // Collect drives sorted by priority (descending)
-        List<Drive> drives = new ArrayList<>();
-        getBlocks().forEach(block -> {
-            if (block instanceof Drive) {
-                drives.add((Drive) block);
-            }
-        });
-        drives.sort((a, b) -> Integer.compare(b.getPriority(), a.getPriority()));
-
-        for (Drive drive : drives) {
-            disks.addAll(drive.getDisks().values());
+    public long getTotalOpens() {
+        long total = 0;
+        for (Long opens : openCounts.values()) {
+            total += opens;
         }
-
-        return disks;
+        return total;
     }
 
-    public List<ExternalStorage> getExternalStorages() {
-        List<ExternalStorage> storages = new ArrayList<>();
-        getBlocks().forEach(block -> {
-            if (block instanceof ExternalStorage) {
-                storages.add((ExternalStorage) block);
-            }
-        });
-        storages.sort((a, b) -> Integer.compare(b.getPriority(), a.getPriority()));
-        return storages;
+    public void recordOpen(UUID playerUuid) {
+        Long current = openCounts.get(playerUuid);
+        openCounts.put(playerUuid, current == null ? 1L : current + 1L);
+        markDirty();
     }
 
-    public boolean canInsert(ItemStack stack) {
-        if (stack == null || stack.getType().isAir()) {
-            return false;
+    public NetworkRole getRole(UUID playerUuid) {
+        if (isOwner(playerUuid)) {
+            return NetworkRole.ADMIN;
         }
+        return roles.getOrDefault(playerUuid, NetworkRole.BLOCKED);
+    }
 
-        List<StorageDisk> disks = getDisks();
-        for (StorageDisk disk : disks) {
-            if (disk.getRemainingCapacity().compareTo(BigInteger.ZERO) > 0) {
-                return true;
-            }
+    public void setRole(UUID playerUuid, NetworkRole role) {
+        if (isOwner(playerUuid)) {
+            return;
         }
-
-        // Check external storages
-        ItemStack probe = stack.clone();
-        probe.setAmount(1);
-        for (ExternalStorage es : getExternalStorages()) {
-            if (es.canAcceptIntoContainer(probe)) {
-                return true;
-            }
+        if (role == null || role == NetworkRole.BLOCKED) {
+            roles.remove(playerUuid);
+        } else {
+            roles.put(playerUuid, role);
         }
+        markDirty();
+    }
 
-        return false;
+    public boolean isOwner(UUID playerUuid) {
+        return ownerUuid.equals(playerUuid);
+    }
+
+    public boolean canAccess(UUID playerUuid) {
+        return isOwner(playerUuid) || getRole(playerUuid).canAccess();
+    }
+
+    public boolean canDeposit(UUID playerUuid) {
+        return isOwner(playerUuid) || getRole(playerUuid).canDeposit();
+    }
+
+    public boolean canWithdraw(UUID playerUuid) {
+        return isOwner(playerUuid) || getRole(playerUuid).canWithdraw();
+    }
+
+    public boolean canManage(UUID playerUuid) {
+        return isOwner(playerUuid) || getRole(playerUuid).canManage();
+    }
+
+    public boolean canUseAugments(UUID playerUuid) {
+        return isOwner(playerUuid) || getRole(playerUuid).canUseAugments();
+    }
+
+    public boolean hasAugment(AugmentType type) {
+        return type != null && installedAugments.contains(type);
+    }
+
+    public Set<AugmentType> getInstalledAugments() {
+        if (installedAugments.isEmpty()) {
+            return Set.of();
+        }
+        return Collections.unmodifiableSet(EnumSet.copyOf(installedAugments));
     }
 
     /**
-     * @return true if the full stack could be inserted into disks and/or external storage
+     * @return true if newly installed
      */
-    public boolean canFullyInsert(ItemStack stack) {
-        if (stack == null || stack.getType().isAir()) {
+    public boolean installAugment(AugmentType type) {
+        if (type == null || installedAugments.contains(type)) {
             return false;
         }
+        installedAugments.add(type);
+        markDirty();
+        return true;
+    }
 
-        BigInteger needed = BigInteger.valueOf(stack.getAmount());
-        BigInteger diskSpace = BigInteger.ZERO;
-        for (StorageDisk disk : getDisks()) {
-            diskSpace = diskSpace.add(disk.getRemainingCapacity());
+    /**
+     * @return true if an augment was removed
+     */
+    public boolean uninstallAugment(AugmentType type) {
+        if (type == null || !installedAugments.remove(type)) {
+            return false;
         }
+        if (type == AugmentType.ENCHANTING && enchantingBookshelves > 0) {
+            getOrCreateWorkstationSession(type).setEnchantingBookshelves(enchantingBookshelves);
+        }
+        WorkstationSession session = workstationSessions.remove(type);
+        if (session != null) {
+            for (ItemStack stack : session.drainAllItems()) {
+                forceInsert(stack, stack.getAmount());
+            }
+        }
+        if (type == AugmentType.ENCHANTING) {
+            enchantingBookshelves = 0;
+        }
+        markDirty();
+        return true;
+    }
 
-        if (diskSpace.compareTo(needed) >= 0) {
+    public WorkstationSession getOrCreateWorkstationSession(AugmentType type) {
+        if (type == null) {
+            return new WorkstationSession();
+        }
+        return workstationSessions.computeIfAbsent(type, t -> new WorkstationSession());
+    }
+
+    public WorkstationSession getWorkstationSession(AugmentType type) {
+        return type == null ? null : workstationSessions.get(type);
+    }
+
+    public void loadAugment(AugmentType type) {
+        if (type != null) {
+            installedAugments.add(type);
+        }
+    }
+
+    public void loadEnchantingBookshelves(int count) {
+        enchantingBookshelves = Math.max(0, Math.min(15, count));
+    }
+
+    public void setEnchantingBookshelves(int count) {
+        int clamped = Math.max(0, Math.min(15, count));
+        if (enchantingBookshelves != clamped) {
+            enchantingBookshelves = clamped;
+            markDirty();
+        }
+    }
+
+    public Set<String> getLinkedChestKeys() {
+        if (linkedChestKeys.isEmpty()) {
+            return Set.of();
+        }
+        return Collections.unmodifiableSet(linkedChestKeys);
+    }
+
+    public int getLinkedChestCount() {
+        return linkedChestKeys.size();
+    }
+
+    public boolean hasLinkedChestKey(String locationKey) {
+        return locationKey != null && linkedChestKeys.contains(locationKey);
+    }
+
+    public boolean addLinkedChest(String world, int x, int y, int z) {
+        if (world == null || world.isEmpty()) {
+            return false;
+        }
+        boolean added = linkedChestKeys.add(NetworkManager.locationKey(world, x, y, z));
+        if (added) {
+            markDirty();
+        }
+        return added;
+    }
+
+    public boolean removeLinkedChest(String world, int x, int y, int z) {
+        if (world == null || world.isEmpty()) {
+            return false;
+        }
+        return removeLinkedChestKey(NetworkManager.locationKey(world, x, y, z));
+    }
+
+    public boolean removeLinkedChestKey(String locationKey) {
+        if (locationKey == null || locationKey.isBlank()) {
+            return false;
+        }
+        boolean removed = linkedChestKeys.remove(locationKey);
+        if (removed) {
+            markDirty();
+        }
+        return removed;
+    }
+
+    public void loadLinkedChest(String world, int x, int y, int z) {
+        if (world != null && !world.isEmpty()) {
+            linkedChestKeys.add(NetworkManager.locationKey(world, x, y, z));
+        }
+    }
+
+    public void clearLinkedChestTags() {
+        for (String key : linkedChestKeys) {
+            Location location = LinkedChestStorage.parseLocationKey(key);
+            if (location != null && location.getWorld() != null) {
+                Block block = location.getBlock();
+                NetworkBlockTags.clearLinkedNetworkId(block);
+            }
+        }
+    }
+
+    public boolean isEmpty() {
+        if (!items.isEmpty()) {
+            return false;
+        }
+        if (upgradeCount > 0 || enchantingBookshelves > 0 || !installedAugments.isEmpty()) {
+            return false;
+        }
+        for (WorkstationSession session : workstationSessions.values()) {
+            if (session != null && !session.isEmpty()) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    public boolean canInsert(ItemStack stack, long amount) {
+        if (stack == null || stack.getType().isAir() || amount <= 0) {
+            return false;
+        }
+        if (getTotalItems() < getCapacity()) {
             return true;
         }
+        return LinkedChestStorage.hasLinkedSpace(this, stack);
+    }
 
-        BigInteger externalNeeded = needed.subtract(diskSpace);
-        if (externalNeeded.compareTo(BigInteger.ZERO) <= 0) {
-            return true;
+    public long insert(ItemStack stack, long amount) {
+        if (stack == null || stack.getType().isAir() || amount <= 0) {
+            return 0;
         }
-
-        ItemStack probe = stack.clone();
-        probe.setAmount(externalNeeded.min(BigInteger.valueOf(Integer.MAX_VALUE)).intValue());
-
-        for (ExternalStorage es : getExternalStorages()) {
-            int leftover = es.simulateInsertIntoContainer(probe);
-            if (leftover <= 0) {
-                return true;
-            }
-            probe.setAmount(leftover);
+        long linkedInserted = LinkedChestStorage.insertIntoLinked(this, stack, amount);
+        long remaining = amount - linkedInserted;
+        if (remaining <= 0) {
+            return linkedInserted;
         }
+        long space = getCapacity() - getTotalItems();
+        if (space <= 0) {
+            return linkedInserted;
+        }
+        long toInsert = Math.min(remaining, space);
+        String key = StoredStack.itemKey(stack);
+        StoredStack existing = items.get(key);
+        if (existing == null) {
+            items.put(key, new StoredStack(stack, toInsert));
+        } else {
+            existing.setAmount(existing.getAmount() + toInsert);
+        }
+        markDirty();
+        return linkedInserted + toInsert;
+    }
 
-        return probe.getAmount() <= 0;
+    /** Insert ignoring capacity — used when reclaiming GUI session items on uninstall. */
+    public long forceInsert(ItemStack stack, long amount) {
+        if (stack == null || stack.getType().isAir() || amount <= 0) {
+            return 0;
+        }
+        String key = StoredStack.itemKey(stack);
+        StoredStack existing = items.get(key);
+        if (existing == null) {
+            items.put(key, new StoredStack(stack, amount));
+        } else {
+            existing.setAmount(existing.getAmount() + amount);
+        }
+        markDirty();
+        return amount;
+    }
+
+    public long extract(String itemKey, long amount) {
+        if (itemKey == null || amount <= 0) {
+            return 0;
+        }
+        long linkedTaken = LinkedChestStorage.extractFromLinked(this, itemKey, amount);
+        long remaining = amount - linkedTaken;
+        if (remaining <= 0) {
+            return linkedTaken;
+        }
+        StoredStack stack = items.get(itemKey);
+        if (stack == null) {
+            return linkedTaken;
+        }
+        long taken = Math.min(remaining, stack.getAmount());
+        long left = stack.getAmount() - taken;
+        if (left <= 0) {
+            items.remove(itemKey);
+        } else {
+            stack.setAmount(left);
+        }
+        markDirty();
+        return linkedTaken + taken;
     }
 
     /**
-     * Insert items into the network's disks.
-     * @return the number of items that could NOT be inserted (0 = all inserted).
+     * Merged view of virtual storage plus live linked-chest contents (by item key).
      */
-    public int insertItems(ItemStack stack) {
-        if (stack == null || stack.getType().isAir()) {
-            return stack == null ? 0 : stack.getAmount();
+    public List<StoredStack> getCombinedStacks() {
+        Map<String, StoredStack> combined = new java.util.LinkedHashMap<>();
+        for (Map.Entry<String, StoredStack> entry : items.entrySet()) {
+            StoredStack stack = entry.getValue();
+            combined.put(entry.getKey(), new StoredStack(stack.getTemplate(), stack.getAmount()));
         }
-
-        ItemStack remaining = stack.clone();
-        List<StorageDisk> disks = getDisks();
-
-        // First pass: prefer disks that already contain this item type (keep items together)
-        for (StorageDisk disk : disks) {
-            if (remaining.getAmount() <= 0) break;
-            if (disk.isFull()) continue;
-            if (disk.getStoredItem(remaining).isEmpty()) continue; // skip disks that don't have this item yet
-
-            BigInteger leftover = disk.addItem(remaining);
-            disk.save();
-
-            if (leftover.compareTo(BigInteger.ZERO) <= 0) {
-                remaining.setAmount(0);
-                break;
-            }
-            remaining.setAmount(leftover.intValue());
-        }
-
-        // Second pass: try any disk with space
-        if (remaining.getAmount() > 0) {
-            for (StorageDisk disk : disks) {
-                if (remaining.getAmount() <= 0) break;
-                if (disk.isFull()) continue;
-
-                BigInteger leftover = disk.addItem(remaining);
-                disk.save();
-
-                if (leftover.compareTo(BigInteger.ZERO) <= 0) {
-                    remaining.setAmount(0);
-                    break;
-                }
-                remaining.setAmount(leftover.intValue());
+        for (Map.Entry<String, StoredStack> entry : LinkedChestStorage.aggregateLinkedByKey(this).entrySet()) {
+            StoredStack linked = entry.getValue();
+            StoredStack existing = combined.get(entry.getKey());
+            if (existing == null) {
+                combined.put(entry.getKey(), linked);
+            } else {
+                existing.setAmount(existing.getAmount() + linked.getAmount());
             }
         }
+        return new ArrayList<>(combined.values());
+    }
 
-        // Try external storages last
-        if (remaining.getAmount() > 0) {
-            for (ExternalStorage es : getExternalStorages()) {
-                if (remaining.getAmount() <= 0) break;
-                int leftover = es.insertIntoContainer(remaining);
-                remaining.setAmount(leftover);
-            }
+    public long getCombinedAmount(String itemKey) {
+        if (itemKey == null) {
+            return 0;
         }
-
-        return remaining.getAmount();
-    }
-
-    public boolean insert(ItemStack stack) {
-        if (stack == null || stack.getType().isAir()) {
-            return false;
+        long total = 0;
+        StoredStack virtual = items.get(itemKey);
+        if (virtual != null) {
+            total += virtual.getAmount();
         }
-        int leftover = insertItems(stack);
-        return leftover < stack.getAmount();
+        total += LinkedChestStorage.extractableAmount(this, itemKey);
+        return total;
     }
 
-    public boolean canInsertOne(ItemStack stack) {
-        if (stack == null || stack.getType().isAir()) {
-            return false;
+    public ItemStack getCombinedTemplate(String itemKey) {
+        if (itemKey == null) {
+            return null;
         }
-        
-        ItemStack one = stack.clone();
-        one.setAmount(1);
-        
-        return canInsert(one);
-    }
-
-    /**
-     * @return the amount actually removed (may be less than requested)
-     */
-    public BigInteger removeItem(StoredItem item, BigInteger amount) {
-        if (item == null || amount.compareTo(BigInteger.ZERO) <= 0) {
-            return BigInteger.ZERO;
+        StoredStack virtual = items.get(itemKey);
+        if (virtual != null) {
+            return virtual.getTemplate();
         }
+        return LinkedChestStorage.findTemplate(this, itemKey);
+    }
 
-        BigInteger remaining = amount;
-        List<StorageDisk> disks = getDisks();
-
-        // If the item knows which disk it lives in, try that disk first
-        if (item.getDiskIdentifier() != null) {
-            for (StorageDisk disk : disks) {
-                if (!disk.getIdentifier().equals(item.getDiskIdentifier())) continue;
-
-                Optional<StoredItem> storedItem = disk.getStoredItem(item.getItem());
-                if (storedItem.isPresent()) {
-                    BigInteger available = storedItem.get().getAmount();
-                    BigInteger toRemove = remaining.min(available);
-
-                    disk.removeItem(storedItem.get(), toRemove);
-                    disk.save();
-
-                    remaining = remaining.subtract(toRemove);
-                }
-                break;
-            }
+    public List<StoredStack> getPage(int page, int perPage) {
+        List<StoredStack> sorted = new ArrayList<>(items.values());
+        sorted.sort(STORED_STACK_COMPARATOR);
+        int start = page * perPage;
+        if (start >= sorted.size()) {
+            return Collections.emptyList();
         }
-
-        // Fall back to other disks if needed
-        if (remaining.compareTo(BigInteger.ZERO) > 0) {
-            for (StorageDisk disk : disks) {
-                if (remaining.compareTo(BigInteger.ZERO) <= 0) break;
-                // Skip the disk we already tried
-                if (item.getDiskIdentifier() != null && disk.getIdentifier().equals(item.getDiskIdentifier())) continue;
-
-                Optional<StoredItem> storedItem = disk.getStoredItem(item.getItem());
-                if (storedItem.isPresent()) {
-                    BigInteger available = storedItem.get().getAmount();
-                    BigInteger toRemove = remaining.min(available);
-
-                    disk.removeItem(storedItem.get(), toRemove);
-                    disk.save();
-
-                    remaining = remaining.subtract(toRemove);
-                }
-            }
-        }
-
-        // Try external storages last
-        if (remaining.compareTo(BigInteger.ZERO) > 0) {
-            for (ExternalStorage es : getExternalStorages()) {
-                if (remaining.compareTo(BigInteger.ZERO) <= 0) break;
-                remaining = es.removeFromContainer(item.getItem(), remaining);
-            }
-        }
-
-        return amount.subtract(remaining);
+        int end = Math.min(start + perPage, sorted.size());
+        return sorted.subList(start, end);
     }
 
-    public Optional<ViewerPage> getPage(int pageIndex) {
-        return getPage(pageIndex, 45);
-    }
-
-    public Optional<ViewerPage> getPage(int pageIndex, int itemsPerPage) {
-        if (pageIndex < 1) {
-            return Optional.empty();
-        }
-
-        List<StoredItem> allItems = new ArrayList<>();
-
-        getDisks().forEach(disk -> {
-            allItems.addAll(disk.getContents());
-        });
-
-        // Include external storage items
-        for (ExternalStorage es : getExternalStorages()) {
-            allItems.addAll(es.getExternalItems());
-        }
-
-        // Remove duplicates by combining items with the same type and metadata.
-        // The merged StoredItem keeps the diskIdentifier of the first occurrence so
-        // that removal can target the correct disk first.
-        List<StoredItem> uniqueItems = new ArrayList<>();
-        for (StoredItem item : allItems) {
-            boolean merged = false;
-            for (int i = 0; i < uniqueItems.size(); i++) {
-                StoredItem existing = uniqueItems.get(i);
-                if (existing.isComparable(item.getItem())) {
-                    BigInteger combinedAmount = existing.getAmount().add(item.getAmount());
-                    uniqueItems.set(i, new StoredItem(existing.getIdentifier(), existing.getDiskIdentifier(), combinedAmount, existing.getItem()));
-                    merged = true;
-                    break;
-                }
-            }
-            if (!merged) {
-                uniqueItems.add(item);
-            }
-        }
-
-        if (uniqueItems.isEmpty()) {
-            return Optional.empty();
-        }
-
-        int totalPages = (int) Math.ceil((double) uniqueItems.size() / itemsPerPage);
-
-        if (pageIndex > totalPages) {
-            return Optional.empty();
-        }
-
-        int startIndex = (pageIndex - 1) * itemsPerPage;
-        int endIndex = Math.min(startIndex + itemsPerPage, uniqueItems.size());
-
-        List<StoredItem> pageItems = uniqueItems.subList(startIndex, endIndex);
-
-        return Optional.of(new ViewerPage(pageIndex, pageItems));
-    }
-
-    public void onSave() {
-        // Save all blocks
-        getBlocks().forEach(block -> {
-            block.onSave();
-        });
-        
-        // Save the network map
-        getNetworkMap().save();
-        
-        // Save permission system to database
-        // Clear existing permissions
-        Restored.getDatabase().getPermissionDAO().removeAllPermissions(identifier);
-
-        // Save current permissions
-        permissionSystem.getTrusted().forEach((node, uuids) -> {
-            for (String uuid : uuids) {
-                Restored.getDatabase().getPermissionDAO().setPermission(identifier, uuid, node, true);
-            }
-        });
-    }
-
-    public boolean hasPermission(Player player, PermissionNode permission) {
-        return permissionSystem.hasPermission(player, permission);
-    }
-
-    public void onBlockPlace(Block block, DriveItem item) {
-        Drive drive = new Drive(this, block.getLocation());
-        drive.onPlaced();
-        updateCache();
-    }
-
-    public void onBlockPlace(Block block, ViewerItem item) {
-        Viewer viewer = new Viewer(this, block.getLocation());
-        viewer.onPlaced();
-        updateCache();
-    }
-
-    public void onBlockPlace(Block block, CraftingViewerItem item) {
-        CraftingViewer craftingViewer = new CraftingViewer(this, block.getLocation());
-        craftingViewer.onPlaced();
-        updateCache();
-    }
-
-    public void onBlockPlace(Block block, ExternalStorageItem item) {
-        ExternalStorage externalStorage = new ExternalStorage(this, block.getLocation());
-        externalStorage.onPlaced();
-        updateCache();
-    }
-
-    public void onBlockPlace(Block block, ImporterItem item) {
-        Importer importer = new Importer(this, block.getLocation());
-        importer.onPlaced();
-        updateCache();
-    }
-
-    public void onBlockPlace(Block block, ExporterItem item) {
-        Exporter exporter = new Exporter(this, block.getLocation());
-        exporter.onPlaced();
-        updateCache();
-    }
-
-    public void onBlockPlace(Block block, CrafterItem item) {
-        Crafter crafter = new Crafter(this, block.getLocation());
-        crafter.onPlaced();
-        updateCache();
-    }
-
-    public void onBlockBreak(BlockBreakEvent event) {
-        Block block = event.getBlock();
-        Optional<NetworkBlock> networkBlockOptional = NetworkManager.getNetworkBlockAt(block);
-        
-        if (networkBlockOptional.isPresent()) {
-            NetworkBlock networkBlock = networkBlockOptional.get();
-            networkBlock.onBreak(event);
-        }
-    }
-
-    public void onBlockClick(PlayerInteractEvent event) {
-        Block block = event.getClickedBlock();
-        if (block == null) return;
-        
-        Optional<NetworkBlock> networkBlockOptional = NetworkManager.getNetworkBlockAt(block);
-        
-        if (networkBlockOptional.isPresent()) {
-            NetworkBlock networkBlock = networkBlockOptional.get();
-            networkBlock.onRightClick(event.getPlayer());
-        }
-    }
-
-    public void unload() {
-        onSave();
-        NetworkManager.unloadNetwork(this);
-    }
-
-    public void delete() {
-        // Remove all blocks
-        ConcurrentSkipListSet<NetworkBlock> blocks = new ConcurrentSkipListSet<>(getBlocks());
-        blocks.forEach(block -> {
-            block.clean();
-        });
-        
-        // Delete the network map
-        getNetworkMap().delete();
-        
-        // Delete from database
-        Restored.getDatabase().getNetworkDAO().delete(identifier);
-        Restored.getDatabase().getNetworkBlockDAO().deleteByNetworkId(identifier);
-        Restored.getDatabase().getPermissionDAO().removeAllPermissions(identifier);
-        
-        // Unload from manager
-        NetworkManager.getNetworks().removeIf(n -> n.getUuid().equals(getUuid()));
-        NetworkMap.unloadSingleMap(getIdentifier());
-    }
-
-    public Optional<NetworkBlock> getNetworkBlock(BlockLocation location) {
-        if (cachedBlocks == null) return Optional.empty();
-        return cachedBlocks.stream().filter(block -> block.getBlockLocation().equals(location)).findFirst();
-    }
-    
-    @Override
-    public int compareTo(Network other) {
-        if (other == null) {
+    public int getPageCount(int perPage) {
+        if (perPage <= 0) {
             return 1;
         }
-        return this.identifier.compareTo(other.identifier);
+        return Math.max(1, (int) Math.ceil(items.size() / (double) perPage));
+    }
+
+    public void addUpgrade() {
+        upgradeCount++;
+        markDirty();
+    }
+
+    /**
+     * Removes one upgrade if capacity would still fit stored items.
+     * @return true if an upgrade was removed
+     */
+    public boolean removeUpgrade() {
+        if (upgradeCount <= 0) {
+            return false;
+        }
+        int newCapacity = 64 * (upgradeCount - 1);
+        if (getTotalItems() > newCapacity) {
+            return false;
+        }
+        upgradeCount--;
+        markDirty();
+        return true;
+    }
+
+    public void transferOwnership(UUID newOwner) {
+        if (newOwner == null) {
+            return;
+        }
+        roles.remove(newOwner);
+        this.ownerUuid = newOwner;
+        markDirty();
+    }
+
+    public void markDirty() {
+        dirty.set(true);
+    }
+
+    public boolean isDirty() {
+        return dirty.get();
+    }
+
+    /**
+     * Queue an async DB save. Memory/cache is already the source of truth;
+     * this only schedules persistence and must stay cheap on the main thread.
+     */
+    public void save() {
+        Restored.getDatabase().getMiddleware().queueNetworkSave(this);
+    }
+
+    /**
+     * Unregister from runtime caches and queue async DB deletion.
+     */
+    public void delete() {
+        clearLinkedChestTags();
+        linkedChestKeys.clear();
+        NetworkManager.unregister(this);
+        Restored.getDatabase().getMiddleware().queueNetworkDelete(this);
+    }
+
+    public void loadItem(String itemKey, String itemData, long amount) {
+        ItemStack stack = PersistedItemCodec.deserializePayload(itemData);
+        // Recompute identity from the actual stack so withdraw/deposit keys match after codec changes.
+        String key = StoredStack.itemKey(stack);
+        StoredStack existing = items.get(key);
+        if (existing != null) {
+            existing.setAmount(existing.getAmount() + amount);
+        } else {
+            items.put(key, new StoredStack(stack, amount));
+        }
+        if (!key.equals(itemKey)) {
+            markDirty();
+        }
+    }
+
+    public ItemData toItemData(String itemKey, StoredStack stack) {
+        return new ItemData(itemKey, BigInteger.valueOf(stack.getAmount()), PersistedItemCodec.serializePayload(stack.getTemplate()));
+    }
+
+    public String getOwnerName() {
+        OfflinePlayer owner = Bukkit.getOfflinePlayer(ownerUuid);
+        return owner.getName() != null ? owner.getName() : ownerUuid.toString();
+    }
+
+    private static final class StoredStackComparator implements Comparator<StoredStack> {
+        @Override
+        public int compare(StoredStack a, StoredStack b) {
+            return a.itemKey().compareTo(b.itemKey());
+        }
     }
 }

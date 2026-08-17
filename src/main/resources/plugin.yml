@@ -8,12 +8,30 @@ authors:
 api-version: 1.13
 folia-supported: true
 
+depend:
+  - BukkitOfUtils
+
+softdepend:
+  - PlaceholderAPI
+  - Nexo
+  - ItemsAdder
+  - MythicMobs
+  - MythicItems
+
 commands:
-  get-item:
-    description: Get an item
-    permission: restored.command.get-item
-    aliases: [gi]
-  network-permissions:
-    description: Update network permissions
-    permission: restored.command.network-permissions
-    aliases: [np]
+  networks:
+    description: Manage your Restored networks
+    permission: restored.command.networks
+    aliases: [network, rn]
+  rrecipes:
+    description: View Restored item recipes
+    permission: restored.command.rrecipes
+    aliases: [rrecipe, restoredrecipes]
+  rinfo:
+    description: Learn how Restored works
+    permission: restored.command.rinfo
+    aliases: [restoredinfo, rhelp]
+  rgetitem:
+    description: Get a Restored custom item
+    permission: restored.command.rgetitem
+    aliases: [rget, restoredgetitem]

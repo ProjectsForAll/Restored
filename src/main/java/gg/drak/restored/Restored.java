@@ -1,17 +1,27 @@
 package gg.drak.restored;
 
+import gg.drak.restored.commands.NetworksCMD;
+import gg.drak.restored.commands.RGetItemCMD;
+import gg.drak.restored.commands.RInfoCMD;
+import gg.drak.restored.commands.RRecipesCMD;
 import gg.drak.restored.config.DatabaseConfig;
-import gg.drak.restored.database.MainOperator;
-import host.plas.bou.BetterPlugin;
-import gg.drak.restored.commands.GetItemCMD;
-import gg.drak.restored.commands.NetworkPermissionsCMD;
 import gg.drak.restored.config.MainConfig;
-import gg.drak.restored.data.Network;
+import gg.drak.restored.config.RecipesConfig;
 import gg.drak.restored.data.NetworkManager;
-import gg.drak.restored.data.blocks.NetworkMap;
+import gg.drak.restored.database.MainOperator;
+import gg.drak.restored.events.ChestLinkingToolListener;
+import gg.drak.restored.events.CraftGuardListener;
+import gg.drak.restored.events.FeedingAugmentListener;
+import gg.drak.restored.events.ItemLoreGuardListener;
 import gg.drak.restored.events.MainListener;
+import gg.drak.restored.events.PocketLinkListener;
+import gg.drak.restored.events.QuiverAugmentListener;
+import gg.drak.restored.gui.GuiListener;
+import gg.drak.restored.gui.NetworkBrowserPrefs;
+import gg.drak.restored.items.RestoredItemRegistry;
+import gg.drak.restored.recipes.RecipeRegistrar;
 import gg.drak.restored.timers.NetworkSaveTimer;
-import gg.drak.restored.timers.NetworkTickTimer;
+import host.plas.bou.BetterPlugin;
 import lombok.Getter;
 import lombok.Setter;
 import org.bukkit.entity.Player;
@@ -26,19 +36,34 @@ public final class Restored extends BetterPlugin {
     private static MainConfig mainConfig;
     @Getter @Setter
     private static MainListener mainListener;
-
     @Getter @Setter
-    private static GetItemCMD getItemCMD;
+    private static CraftGuardListener craftGuardListener;
     @Getter @Setter
-    private static NetworkPermissionsCMD networkPermissionsCMD;
-
+    private static ItemLoreGuardListener itemLoreGuardListener;
+    @Getter @Setter
+    private static GuiListener guiListener;
+    @Getter @Setter
+    private static PocketLinkListener pocketLinkListener;
+    @Getter @Setter
+    private static ChestLinkingToolListener chestLinkingToolListener;
+    @Getter @Setter
+    private static FeedingAugmentListener feedingAugmentListener;
+    @Getter @Setter
+    private static QuiverAugmentListener quiverAugmentListener;
+    @Getter @Setter
+    private static NetworksCMD networksCMD;
+    @Getter @Setter
+    private static RRecipesCMD rRecipesCMD;
+    @Getter @Setter
+    private static RInfoCMD rInfoCMD;
+    @Getter @Setter
+    private static RGetItemCMD rGetItemCMD;
     @Getter @Setter
     private static NetworkSaveTimer networkSaveTimer;
     @Getter @Setter
-    private static NetworkTickTimer networkTickTimer;
-
-    @Getter @Setter
     private static DatabaseConfig databaseConfig;
+    @Getter @Setter
+    private static RecipesConfig recipesConfig;
     @Getter @Setter
     private static MainOperator database;
 
@@ -48,48 +73,48 @@ public final class Restored extends BetterPlugin {
 
     @Override
     public void onBaseEnabled() {
-        // Plugin startup logic
         setInstance(this);
 
         setMainConfig(new MainConfig());
         setDatabaseConfig(new DatabaseConfig());
+        setRecipesConfig(new RecipesConfig());
+        NetworkBrowserPrefs.init();
         setDatabase(new MainOperator());
         getDatabase().ensureDatabase();
+        getDatabase().ensureTables();
+
+        NetworkManager.loadAll(getDatabase().loadAllNetworks());
 
         setMainListener(new MainListener());
-
-        setGetItemCMD(new GetItemCMD());
-        setNetworkPermissionsCMD(new NetworkPermissionsCMD());
-
+        setPocketLinkListener(new PocketLinkListener());
+        setChestLinkingToolListener(new ChestLinkingToolListener());
+        setFeedingAugmentListener(new FeedingAugmentListener());
+        setQuiverAugmentListener(new QuiverAugmentListener());
+        setCraftGuardListener(new CraftGuardListener());
+        setItemLoreGuardListener(new ItemLoreGuardListener());
+        setGuiListener(new GuiListener());
+        setNetworksCMD(new NetworksCMD());
+        setRRecipesCMD(new RRecipesCMD());
+        setRInfoCMD(new RInfoCMD());
+        setRGetItemCMD(new RGetItemCMD());
+        RestoredItemRegistry.registerWithItemFactory();
+        RecipeRegistrar.register();
         setNetworkSaveTimer(new NetworkSaveTimer());
-        setNetworkTickTimer(new NetworkTickTimer());
-
-        NetworkMap.init();
     }
 
     @Override
     public void onBaseDisable() {
-        // Plugin shutdown logic
-        NetworkManager.getNetworks().forEach(Network::unload);
-
-        NetworkMap.stop();
-
-        // Flush all pending database operations before plugin fully disables
+        RestoredItemRegistry.unregisterFromItemFactory();
+        // Snapshot dirty networks on the shutdown thread, then block until DB writes finish.
+        NetworkManager.saveAllDirty();
         getDatabase().getMiddleware().flush();
     }
 
-    /**
-     * Get a map of online players.
-     * Sorted by player name.
-     * @return A map of online players sorted by player name.
-     */
     public ConcurrentSkipListMap<String, Player> getOnlinePlayers() {
         ConcurrentSkipListMap<String, Player> onlinePlayers = new ConcurrentSkipListMap<>();
-
         for (Player player : getServer().getOnlinePlayers()) {
             onlinePlayers.put(player.getName(), player);
         }
-
         return onlinePlayers;
     }
 }

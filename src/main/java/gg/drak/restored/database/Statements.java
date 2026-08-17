@@ -4,93 +4,118 @@ import host.plas.bou.sql.ConnectorSet;
 import lombok.Getter;
 
 /**
- * SQL statements for database operations.
- * Supports both MySQL and SQLite database types.
+ * SQL statements for the single-chest network model.
  */
-public class Statements {
-    
+public final class Statements {
+
+    private Statements() {
+    }
+
     @Getter
     public enum MySQL {
         CREATE_DATABASE("CREATE DATABASE IF NOT EXISTS `%database%`;"),
-        
+
         CREATE_TABLES(
                 "CREATE TABLE IF NOT EXISTS `%table_prefix%Networks` ( " +
                 "Identifier VARCHAR(36) NOT NULL, " +
                 "OwnerUuid VARCHAR(36) NOT NULL, " +
+                "World VARCHAR(255) DEFAULT NULL, " +
+                "X INTEGER DEFAULT NULL, " +
+                "Y INTEGER DEFAULT NULL, " +
+                "Z INTEGER DEFAULT NULL, " +
+                "UpgradeCount INTEGER NOT NULL DEFAULT 0, " +
+                "TotalOpens BIGINT NOT NULL DEFAULT 0, " +
                 "PRIMARY KEY (Identifier) " +
                 ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;; " +
-                
-                "CREATE TABLE IF NOT EXISTS `%table_prefix%NetworkBlocks` ( " +
-                "Identifier VARCHAR(255) NOT NULL, " +
+
+                "CREATE TABLE IF NOT EXISTS `%table_prefix%NetworkItems` ( " +
                 "NetworkId VARCHAR(36) NOT NULL, " +
-                "BlockType VARCHAR(50) NOT NULL, " +
-                "Data TEXT, " +
-                "PRIMARY KEY (Identifier), " +
+                "ItemKey TEXT NOT NULL, " +
+                "ItemData TEXT NOT NULL, " +
+                "Amount BIGINT NOT NULL, " +
+                "PRIMARY KEY (NetworkId, ItemKey(255)), " +
                 "FOREIGN KEY (NetworkId) REFERENCES `%table_prefix%Networks`(Identifier) ON DELETE CASCADE " +
                 ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;; " +
-                
-                "CREATE TABLE IF NOT EXISTS `%table_prefix%Disks` ( " +
-                "Identifier VARCHAR(36) NOT NULL, " +
-                "DriveId VARCHAR(255) DEFAULT NULL, " +
-                "Slot INTEGER, " +
-                "Capacity TEXT NOT NULL, " +
-                "Items TEXT, " +
-                "PRIMARY KEY (Identifier) " +
-                ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;; " +
-                
-                "CREATE TABLE IF NOT EXISTS `%table_prefix%Permissions` ( " +
+
+                "CREATE TABLE IF NOT EXISTS `%table_prefix%NetworkPermissions` ( " +
                 "NetworkId VARCHAR(36) NOT NULL, " +
                 "PlayerUuid VARCHAR(36) NOT NULL, " +
-                "PermissionNode VARCHAR(100) NOT NULL, " +
-                "Value BOOLEAN NOT NULL DEFAULT TRUE, " +
-                "PRIMARY KEY (NetworkId, PlayerUuid, PermissionNode), " +
+                "Role VARCHAR(32) NOT NULL, " +
+                "PRIMARY KEY (NetworkId, PlayerUuid), " +
                 "FOREIGN KEY (NetworkId) REFERENCES `%table_prefix%Networks`(Identifier) ON DELETE CASCADE " +
                 ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;; " +
-                
-                "CREATE TABLE IF NOT EXISTS `%table_prefix%Filters` ( " +
+
+                "CREATE TABLE IF NOT EXISTS `%table_prefix%NetworkOpenStats` ( " +
+                "NetworkId VARCHAR(36) NOT NULL, " +
                 "PlayerUuid VARCHAR(36) NOT NULL, " +
-                "Filter TEXT, " +
-                "PRIMARY KEY (PlayerUuid) " +
+                "Opens BIGINT NOT NULL DEFAULT 0, " +
+                "PRIMARY KEY (NetworkId, PlayerUuid), " +
+                "FOREIGN KEY (NetworkId) REFERENCES `%table_prefix%Networks`(Identifier) ON DELETE CASCADE " +
+                ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;; " +
+
+                "CREATE TABLE IF NOT EXISTS `%table_prefix%NetworkAugments` ( " +
+                "NetworkId VARCHAR(36) NOT NULL, " +
+                "AugmentType VARCHAR(32) NOT NULL, " +
+                "PRIMARY KEY (NetworkId, AugmentType), " +
+                "FOREIGN KEY (NetworkId) REFERENCES `%table_prefix%Networks`(Identifier) ON DELETE CASCADE " +
+                ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;; " +
+
+                "CREATE TABLE IF NOT EXISTS `%table_prefix%NetworkLinkedChests` ( " +
+                "NetworkId VARCHAR(36) NOT NULL, " +
+                "World VARCHAR(255) NOT NULL, " +
+                "X INTEGER NOT NULL, " +
+                "Y INTEGER NOT NULL, " +
+                "Z INTEGER NOT NULL, " +
+                "PRIMARY KEY (NetworkId, World(191), X, Y, Z), " +
+                "FOREIGN KEY (NetworkId) REFERENCES `%table_prefix%Networks`(Identifier) ON DELETE CASCADE " +
                 ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;; "
         ),
-        
-        INSERT_NETWORK("INSERT INTO `%table_prefix%Networks` (Identifier, OwnerUuid) VALUES (?, ?) " +
-                "ON DUPLICATE KEY UPDATE OwnerUuid = VALUES(OwnerUuid);"),
-        
+
+        INSERT_NETWORK("INSERT INTO `%table_prefix%Networks` (Identifier, OwnerUuid, World, X, Y, Z, UpgradeCount, TotalOpens) " +
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE " +
+                "OwnerUuid = VALUES(OwnerUuid), World = VALUES(World), X = VALUES(X), Y = VALUES(Y), Z = VALUES(Z), " +
+                "UpgradeCount = VALUES(UpgradeCount), TotalOpens = VALUES(TotalOpens);"),
+
         DELETE_NETWORK("DELETE FROM `%table_prefix%Networks` WHERE Identifier = ?;"),
-        
+
         GET_NETWORK("SELECT * FROM `%table_prefix%Networks` WHERE Identifier = ?;"),
-        
-        INSERT_NETWORK_BLOCK("INSERT INTO `%table_prefix%NetworkBlocks` (Identifier, NetworkId, BlockType, Data) VALUES (?, ?, ?, ?) " +
-                "ON DUPLICATE KEY UPDATE NetworkId = VALUES(NetworkId), BlockType = VALUES(BlockType), Data = VALUES(Data);"),
-        
-        DELETE_NETWORK_BLOCK("DELETE FROM `%table_prefix%NetworkBlocks` WHERE Identifier = ?;"),
-        
-        DELETE_NETWORK_BLOCKS_BY_NETWORK("DELETE FROM `%table_prefix%NetworkBlocks` WHERE NetworkId = ?;"),
-        
-        GET_NETWORK_BLOCKS_BY_NETWORK("SELECT * FROM `%table_prefix%NetworkBlocks` WHERE NetworkId = ?;"),
-        GET_NETWORK_BLOCK("SELECT * FROM `%table_prefix%NetworkBlocks` WHERE Identifier = ?;"),
-        
-        INSERT_DISK("INSERT INTO `%table_prefix%Disks` (Identifier, DriveId, Slot, Capacity, Items) VALUES (?, ?, ?, ?, ?) " +
-                "ON DUPLICATE KEY UPDATE DriveId = VALUES(DriveId), Slot = VALUES(Slot), Capacity = VALUES(Capacity), Items = VALUES(Items);"),
-        
-        GET_DISK("SELECT * FROM `%table_prefix%Disks` WHERE Identifier = ?;"),
-        GET_DISKS_BY_DRIVE("SELECT * FROM `%table_prefix%Disks` WHERE DriveId = ?;"),
-        
-        INSERT_PERMISSION("INSERT INTO `%table_prefix%Permissions` (NetworkId, PlayerUuid, PermissionNode, Value) VALUES (?, ?, ?, ?) " +
-                "ON DUPLICATE KEY UPDATE Value = VALUES(Value);"),
-        
-        DELETE_PERMISSIONS_BY_NETWORK("DELETE FROM `%table_prefix%Permissions` WHERE NetworkId = ?;"),
-        
-        GET_PERMISSIONS_BY_NETWORK("SELECT * FROM `%table_prefix%Permissions` WHERE NetworkId = ?;"),
-        
-        SET_FILTER("INSERT INTO `%table_prefix%Filters` (PlayerUuid, Filter) VALUES (?, ?) " +
-                "ON DUPLICATE KEY UPDATE Filter = VALUES(Filter);"),
-        
-        GET_FILTER("SELECT * FROM `%table_prefix%Filters` WHERE PlayerUuid = ?;"),
-        
-        CLEAR_FILTER("DELETE FROM `%table_prefix%Filters` WHERE PlayerUuid = ?;"),
+
         GET_ALL_NETWORKS("SELECT * FROM `%table_prefix%Networks`;"),
+
+        INSERT_NETWORK_ITEM("INSERT INTO `%table_prefix%NetworkItems` (NetworkId, ItemKey, ItemData, Amount) VALUES (?, ?, ?, ?) " +
+                "ON DUPLICATE KEY UPDATE ItemData = VALUES(ItemData), Amount = VALUES(Amount);"),
+
+        DELETE_NETWORK_ITEMS("DELETE FROM `%table_prefix%NetworkItems` WHERE NetworkId = ?;"),
+
+        GET_NETWORK_ITEMS("SELECT * FROM `%table_prefix%NetworkItems` WHERE NetworkId = ?;"),
+
+        INSERT_NETWORK_PERMISSION("INSERT INTO `%table_prefix%NetworkPermissions` (NetworkId, PlayerUuid, Role) VALUES (?, ?, ?) " +
+                "ON DUPLICATE KEY UPDATE Role = VALUES(Role);"),
+
+        DELETE_NETWORK_PERMISSIONS("DELETE FROM `%table_prefix%NetworkPermissions` WHERE NetworkId = ?;"),
+
+        GET_NETWORK_PERMISSIONS("SELECT * FROM `%table_prefix%NetworkPermissions` WHERE NetworkId = ?;"),
+
+        INSERT_NETWORK_OPEN_STAT("INSERT INTO `%table_prefix%NetworkOpenStats` (NetworkId, PlayerUuid, Opens) VALUES (?, ?, ?) " +
+                "ON DUPLICATE KEY UPDATE Opens = VALUES(Opens);"),
+
+        DELETE_NETWORK_OPEN_STATS("DELETE FROM `%table_prefix%NetworkOpenStats` WHERE NetworkId = ?;"),
+
+        GET_NETWORK_OPEN_STATS("SELECT * FROM `%table_prefix%NetworkOpenStats` WHERE NetworkId = ?;"),
+
+        INSERT_NETWORK_AUGMENT("INSERT INTO `%table_prefix%NetworkAugments` (NetworkId, AugmentType) VALUES (?, ?) " +
+                "ON DUPLICATE KEY UPDATE AugmentType = VALUES(AugmentType);"),
+
+        DELETE_NETWORK_AUGMENTS("DELETE FROM `%table_prefix%NetworkAugments` WHERE NetworkId = ?;"),
+
+        GET_NETWORK_AUGMENTS("SELECT * FROM `%table_prefix%NetworkAugments` WHERE NetworkId = ?;"),
+
+        INSERT_NETWORK_LINKED_CHEST("INSERT INTO `%table_prefix%NetworkLinkedChests` (NetworkId, World, X, Y, Z) VALUES (?, ?, ?, ?, ?) " +
+                "ON DUPLICATE KEY UPDATE World = VALUES(World);"),
+
+        DELETE_NETWORK_LINKED_CHESTS("DELETE FROM `%table_prefix%NetworkLinkedChests` WHERE NetworkId = ?;"),
+
+        GET_NETWORK_LINKED_CHESTS("SELECT * FROM `%table_prefix%NetworkLinkedChests` WHERE NetworkId = ?;"),
         ;
 
         private final String statement;
@@ -103,80 +128,101 @@ public class Statements {
     @Getter
     public enum SQLite {
         CREATE_DATABASE(""),
-        
+
         CREATE_TABLES(
                 "CREATE TABLE IF NOT EXISTS `%table_prefix%Networks` ( " +
                 "Identifier TEXT NOT NULL, " +
                 "OwnerUuid TEXT NOT NULL, " +
+                "World TEXT DEFAULT NULL, " +
+                "X INTEGER DEFAULT NULL, " +
+                "Y INTEGER DEFAULT NULL, " +
+                "Z INTEGER DEFAULT NULL, " +
+                "UpgradeCount INTEGER NOT NULL DEFAULT 0, " +
+                "TotalOpens INTEGER NOT NULL DEFAULT 0, " +
                 "PRIMARY KEY (Identifier) " +
                 ");; " +
-                
-                "CREATE TABLE IF NOT EXISTS `%table_prefix%NetworkBlocks` ( " +
-                "Identifier TEXT NOT NULL, " +
+
+                "CREATE TABLE IF NOT EXISTS `%table_prefix%NetworkItems` ( " +
                 "NetworkId TEXT NOT NULL, " +
-                "BlockType TEXT NOT NULL, " +
-                "Data TEXT, " +
-                "PRIMARY KEY (Identifier), " +
+                "ItemKey TEXT NOT NULL, " +
+                "ItemData TEXT NOT NULL, " +
+                "Amount INTEGER NOT NULL, " +
+                "PRIMARY KEY (NetworkId, ItemKey), " +
                 "FOREIGN KEY (NetworkId) REFERENCES `%table_prefix%Networks`(Identifier) ON DELETE CASCADE " +
                 ");; " +
-                
-                "CREATE TABLE IF NOT EXISTS `%table_prefix%Disks` ( " +
-                "Identifier TEXT NOT NULL, " +
-                "DriveId TEXT DEFAULT NULL, " +
-                "Slot INTEGER, " +
-                "Capacity TEXT NOT NULL, " +
-                "Items TEXT, " +
-                "PRIMARY KEY (Identifier) " +
-                ");; " +
-                
-                "CREATE TABLE IF NOT EXISTS `%table_prefix%Permissions` ( " +
+
+                "CREATE TABLE IF NOT EXISTS `%table_prefix%NetworkPermissions` ( " +
                 "NetworkId TEXT NOT NULL, " +
                 "PlayerUuid TEXT NOT NULL, " +
-                "PermissionNode TEXT NOT NULL, " +
-                "Value INTEGER NOT NULL DEFAULT 1, " +
-                "PRIMARY KEY (NetworkId, PlayerUuid, PermissionNode), " +
+                "Role TEXT NOT NULL, " +
+                "PRIMARY KEY (NetworkId, PlayerUuid), " +
                 "FOREIGN KEY (NetworkId) REFERENCES `%table_prefix%Networks`(Identifier) ON DELETE CASCADE " +
                 ");; " +
-                
-                "CREATE TABLE IF NOT EXISTS `%table_prefix%Filters` ( " +
+
+                "CREATE TABLE IF NOT EXISTS `%table_prefix%NetworkOpenStats` ( " +
+                "NetworkId TEXT NOT NULL, " +
                 "PlayerUuid TEXT NOT NULL, " +
-                "Filter TEXT, " +
-                "PRIMARY KEY (PlayerUuid) " +
+                "Opens INTEGER NOT NULL DEFAULT 0, " +
+                "PRIMARY KEY (NetworkId, PlayerUuid), " +
+                "FOREIGN KEY (NetworkId) REFERENCES `%table_prefix%Networks`(Identifier) ON DELETE CASCADE " +
+                ");; " +
+
+                "CREATE TABLE IF NOT EXISTS `%table_prefix%NetworkAugments` ( " +
+                "NetworkId TEXT NOT NULL, " +
+                "AugmentType TEXT NOT NULL, " +
+                "PRIMARY KEY (NetworkId, AugmentType), " +
+                "FOREIGN KEY (NetworkId) REFERENCES `%table_prefix%Networks`(Identifier) ON DELETE CASCADE " +
+                ");; " +
+
+                "CREATE TABLE IF NOT EXISTS `%table_prefix%NetworkLinkedChests` ( " +
+                "NetworkId TEXT NOT NULL, " +
+                "World TEXT NOT NULL, " +
+                "X INTEGER NOT NULL, " +
+                "Y INTEGER NOT NULL, " +
+                "Z INTEGER NOT NULL, " +
+                "PRIMARY KEY (NetworkId, World, X, Y, Z), " +
+                "FOREIGN KEY (NetworkId) REFERENCES `%table_prefix%Networks`(Identifier) ON DELETE CASCADE " +
                 ");; "
         ),
-        
-        INSERT_NETWORK("INSERT OR REPLACE INTO `%table_prefix%Networks` (Identifier, OwnerUuid) VALUES (?, ?);"),
-        
+
+        INSERT_NETWORK("INSERT OR REPLACE INTO `%table_prefix%Networks` (Identifier, OwnerUuid, World, X, Y, Z, UpgradeCount, TotalOpens) " +
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?);"),
+
         DELETE_NETWORK("DELETE FROM `%table_prefix%Networks` WHERE Identifier = ?;"),
-        
+
         GET_NETWORK("SELECT * FROM `%table_prefix%Networks` WHERE Identifier = ?;"),
-        
-        INSERT_NETWORK_BLOCK("INSERT OR REPLACE INTO `%table_prefix%NetworkBlocks` (Identifier, NetworkId, BlockType, Data) VALUES (?, ?, ?, ?);"),
-        
-        DELETE_NETWORK_BLOCK("DELETE FROM `%table_prefix%NetworkBlocks` WHERE Identifier = ?;"),
-        
-        DELETE_NETWORK_BLOCKS_BY_NETWORK("DELETE FROM `%table_prefix%NetworkBlocks` WHERE NetworkId = ?;"),
-        
-        GET_NETWORK_BLOCKS_BY_NETWORK("SELECT * FROM `%table_prefix%NetworkBlocks` WHERE NetworkId = ?;"),
-        GET_NETWORK_BLOCK("SELECT * FROM `%table_prefix%NetworkBlocks` WHERE Identifier = ?;"),
-        
-        INSERT_DISK("INSERT OR REPLACE INTO `%table_prefix%Disks` (Identifier, DriveId, Slot, Capacity, Items) VALUES (?, ?, ?, ?, ?);"),
-        
-        GET_DISK("SELECT * FROM `%table_prefix%Disks` WHERE Identifier = ?;"),
-        GET_DISKS_BY_DRIVE("SELECT * FROM `%table_prefix%Disks` WHERE DriveId = ?;"),
-        
-        INSERT_PERMISSION("INSERT OR REPLACE INTO `%table_prefix%Permissions` (NetworkId, PlayerUuid, PermissionNode, Value) VALUES (?, ?, ?, ?);"),
-        
-        DELETE_PERMISSIONS_BY_NETWORK("DELETE FROM `%table_prefix%Permissions` WHERE NetworkId = ?;"),
-        
-        GET_PERMISSIONS_BY_NETWORK("SELECT * FROM `%table_prefix%Permissions` WHERE NetworkId = ?;"),
-        
-        SET_FILTER("INSERT OR REPLACE INTO `%table_prefix%Filters` (PlayerUuid, Filter) VALUES (?, ?);"),
-        
-        GET_FILTER("SELECT * FROM `%table_prefix%Filters` WHERE PlayerUuid = ?;"),
-        
-        CLEAR_FILTER("DELETE FROM `%table_prefix%Filters` WHERE PlayerUuid = ?;"),
+
         GET_ALL_NETWORKS("SELECT * FROM `%table_prefix%Networks`;"),
+
+        INSERT_NETWORK_ITEM("INSERT OR REPLACE INTO `%table_prefix%NetworkItems` (NetworkId, ItemKey, ItemData, Amount) VALUES (?, ?, ?, ?);"),
+
+        DELETE_NETWORK_ITEMS("DELETE FROM `%table_prefix%NetworkItems` WHERE NetworkId = ?;"),
+
+        GET_NETWORK_ITEMS("SELECT * FROM `%table_prefix%NetworkItems` WHERE NetworkId = ?;"),
+
+        INSERT_NETWORK_PERMISSION("INSERT OR REPLACE INTO `%table_prefix%NetworkPermissions` (NetworkId, PlayerUuid, Role) VALUES (?, ?, ?);"),
+
+        DELETE_NETWORK_PERMISSIONS("DELETE FROM `%table_prefix%NetworkPermissions` WHERE NetworkId = ?;"),
+
+        GET_NETWORK_PERMISSIONS("SELECT * FROM `%table_prefix%NetworkPermissions` WHERE NetworkId = ?;"),
+
+        INSERT_NETWORK_OPEN_STAT("INSERT OR REPLACE INTO `%table_prefix%NetworkOpenStats` (NetworkId, PlayerUuid, Opens) VALUES (?, ?, ?);"),
+
+        DELETE_NETWORK_OPEN_STATS("DELETE FROM `%table_prefix%NetworkOpenStats` WHERE NetworkId = ?;"),
+
+        GET_NETWORK_OPEN_STATS("SELECT * FROM `%table_prefix%NetworkOpenStats` WHERE NetworkId = ?;"),
+
+        INSERT_NETWORK_AUGMENT("INSERT OR REPLACE INTO `%table_prefix%NetworkAugments` (NetworkId, AugmentType) VALUES (?, ?);"),
+
+        DELETE_NETWORK_AUGMENTS("DELETE FROM `%table_prefix%NetworkAugments` WHERE NetworkId = ?;"),
+
+        GET_NETWORK_AUGMENTS("SELECT * FROM `%table_prefix%NetworkAugments` WHERE NetworkId = ?;"),
+
+        INSERT_NETWORK_LINKED_CHEST("INSERT OR REPLACE INTO `%table_prefix%NetworkLinkedChests` (NetworkId, World, X, Y, Z) VALUES (?, ?, ?, ?, ?);"),
+
+        DELETE_NETWORK_LINKED_CHESTS("DELETE FROM `%table_prefix%NetworkLinkedChests` WHERE NetworkId = ?;"),
+
+        GET_NETWORK_LINKED_CHESTS("SELECT * FROM `%table_prefix%NetworkLinkedChests` WHERE NetworkId = ?;"),
         ;
 
         private final String statement;
@@ -192,35 +238,32 @@ public class Statements {
         INSERT_NETWORK,
         DELETE_NETWORK,
         GET_NETWORK,
-        INSERT_NETWORK_BLOCK,
-        DELETE_NETWORK_BLOCK,
-        DELETE_NETWORK_BLOCKS_BY_NETWORK,
-        GET_NETWORK_BLOCKS_BY_NETWORK,
-        GET_NETWORK_BLOCK,
-        INSERT_DISK,
-        GET_DISK,
-        GET_DISKS_BY_DRIVE,
-        INSERT_PERMISSION,
-        DELETE_PERMISSIONS_BY_NETWORK,
-        GET_PERMISSIONS_BY_NETWORK,
-        SET_FILTER,
-        GET_FILTER,
-        CLEAR_FILTER,
         GET_ALL_NETWORKS,
-        ;
+        INSERT_NETWORK_ITEM,
+        DELETE_NETWORK_ITEMS,
+        GET_NETWORK_ITEMS,
+        INSERT_NETWORK_PERMISSION,
+        DELETE_NETWORK_PERMISSIONS,
+        GET_NETWORK_PERMISSIONS,
+        INSERT_NETWORK_OPEN_STAT,
+        DELETE_NETWORK_OPEN_STATS,
+        GET_NETWORK_OPEN_STATS,
+        INSERT_NETWORK_AUGMENT,
+        DELETE_NETWORK_AUGMENTS,
+        GET_NETWORK_AUGMENTS,
+        INSERT_NETWORK_LINKED_CHEST,
+        DELETE_NETWORK_LINKED_CHESTS,
+        GET_NETWORK_LINKED_CHESTS,
     }
 
     public static String getStatement(StatementType type, ConnectorSet connectorSet) {
-        switch (connectorSet.getType()) {
-            case MYSQL:
-                return MySQL.valueOf(type.name()).getStatement()
-                        .replace("%database%", connectorSet.getDatabase())
-                        .replace("%table_prefix%", connectorSet.getTablePrefix());
-            case SQLITE:
-                return SQLite.valueOf(type.name()).getStatement()
-                        .replace("%table_prefix%", connectorSet.getTablePrefix());
-            default:
-                return "";
-        }
+        return switch (connectorSet.getType()) {
+            case MYSQL -> MySQL.valueOf(type.name()).getStatement()
+                    .replace("%database%", connectorSet.getDatabase())
+                    .replace("%table_prefix%", connectorSet.getTablePrefix());
+            case SQLITE -> SQLite.valueOf(type.name()).getStatement()
+                    .replace("%table_prefix%", connectorSet.getTablePrefix());
+            default -> "";
+        };
     }
 }

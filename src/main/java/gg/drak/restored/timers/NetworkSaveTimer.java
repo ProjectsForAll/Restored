@@ -1,17 +1,17 @@
 package gg.drak.restored.timers;
 
-import host.plas.bou.scheduling.BaseRunnable;
-import gg.drak.restored.data.Network;
 import gg.drak.restored.data.NetworkManager;
+import host.plas.bou.scheduling.BaseRunnable;
 
 public class NetworkSaveTimer extends BaseRunnable {
+
     public NetworkSaveTimer() {
-        super(0, 20 * 60);
+        // Every 5 seconds: queue dirty networks; middleware flushes async every 1s.
+        super(100, 100);
     }
 
     @Override
     public void run() {
-        // Save the network.
-        NetworkManager.getNetworks().forEach(Network::onSave);
+        NetworkManager.saveAllDirty();
     }
 }

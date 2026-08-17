@@ -2,65 +2,48 @@ package gg.drak.restored.database;
 
 import gg.drak.restored.Restored;
 import gg.drak.restored.data.Network;
-import gg.drak.restored.data.blocks.LocatedBlock;
-import gg.drak.restored.data.blocks.SingleNetworkMap;
-import gg.drak.restored.data.blocks.impl.Drive;
-import gg.drak.restored.data.disks.StorageDisk;
-import gg.drak.restored.database.dao.*;
+import gg.drak.restored.database.dao.NetworkAugmentDAO;
+import gg.drak.restored.database.dao.NetworkDAO;
+import gg.drak.restored.database.dao.NetworkItemDAO;
+import gg.drak.restored.database.dao.NetworkLinkedChestDAO;
+import gg.drak.restored.database.dao.NetworkOpenStatsDAO;
+import gg.drak.restored.database.dao.NetworkPermissionDAO;
+import gg.drak.restored.util.LinkedChestStorage;
+import gg.drak.restored.util.NetworkBlockTags;
 import host.plas.bou.sql.DBOperator;
 import lombok.Getter;
+import org.bukkit.Location;
 
-import java.util.Optional;
-import java.util.concurrent.ConcurrentSkipListSet;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.UUID;
 
-/**
- * Main database operator for the Restored plugin.
- * Handles database connection and table creation.
- * Provides access to all DAOs.
- */
 @Getter
 public class MainOperator extends DBOperator {
     private final NetworkDAO networkDAO;
-    private final NetworkBlockDAO networkBlockDAO;
-    private final DiskDAO diskDAO;
-    private final PermissionDAO permissionDAO;
-    private final FilterDAO filterDAO;
+    private final NetworkItemDAO networkItemDAO;
+    private final NetworkPermissionDAO networkPermissionDAO;
+    private final NetworkOpenStatsDAO networkOpenStatsDAO;
+    private final NetworkAugmentDAO networkAugmentDAO;
+    private final NetworkLinkedChestDAO networkLinkedChestDAO;
     private final DatabaseMiddleware middleware;
-    
+
     public MainOperator() {
         super(Restored.getDatabaseConfig().getConnectorSet(), Restored.getInstance());
-        
-        // Initialize Middleware
         this.middleware = new DatabaseMiddleware(this);
-
-        // Initialize DAOs
         this.networkDAO = new NetworkDAO(this);
-        this.networkBlockDAO = new NetworkBlockDAO(this);
-        this.diskDAO = new DiskDAO(this);
-        this.permissionDAO = new PermissionDAO(this);
-        this.filterDAO = new FilterDAO(this);
+        this.networkItemDAO = new NetworkItemDAO(this);
+        this.networkPermissionDAO = new NetworkPermissionDAO(this);
+        this.networkOpenStatsDAO = new NetworkOpenStatsDAO(this);
+        this.networkAugmentDAO = new NetworkAugmentDAO(this);
+        this.networkLinkedChestDAO = new NetworkLinkedChestDAO(this);
     }
 
     @Override
     public void ensureTables() {
         try {
-            String s1 = Statements.getStatement(Statements.StatementType.CREATE_TABLES, getConnectorSet());
-
-            execute(s1, stmt -> {});
-
-            // Migration: Ensure DriveId and Slot columns exist in Disks table
-            try {
-                if (getConnectorSet().getType() == host.plas.bou.sql.DatabaseType.MYSQL) {
-                    execute("ALTER TABLE `" + getConnectorSet().getTablePrefix() + "Disks` ADD COLUMN IF NOT EXISTS DriveId VARCHAR(255) DEFAULT NULL AFTER Identifier;", stmt -> {});
-                    execute("ALTER TABLE `" + getConnectorSet().getTablePrefix() + "Disks` ADD COLUMN IF NOT EXISTS Slot INTEGER AFTER DriveId;", stmt -> {});
-                } else {
-                    // SQLite doesn't support ADD COLUMN IF NOT EXISTS easily, but we can try and ignore errors
-                    try { execute("ALTER TABLE `" + getConnectorSet().getTablePrefix() + "Disks` ADD COLUMN DriveId TEXT DEFAULT NULL;", stmt -> {}); } catch (Exception ignored) {}
-                    try { execute("ALTER TABLE `" + getConnectorSet().getTablePrefix() + "Disks` ADD COLUMN Slot INTEGER;", stmt -> {}); } catch (Exception ignored) {}
-                }
-            } catch (Exception e) {
-                // Ignore errors if columns already exist
-            }
+            String statement = Statements.getStatement(Statements.StatementType.CREATE_TABLES, getConnectorSet());
+            execute(statement, stmt -> {});
         } catch (Exception e) {
             Restored.getInstance().logSevere("Failed to ensure database tables", e);
         }
@@ -69,86 +52,138 @@ public class MainOperator extends DBOperator {
     @Override
     public void ensureDatabase() {
         try {
-            String s1 = Statements.getStatement(Statements.StatementType.CREATE_DATABASE, getConnectorSet());
-
-            execute(s1, stmt -> {});
+            String statement = Statements.getStatement(Statements.StatementType.CREATE_DATABASE, getConnectorSet());
+            execute(statement, stmt -> {});
         } catch (Exception e) {
             Restored.getInstance().logSevere("Failed to ensure database", e);
         }
     }
 
-    public java.util.concurrent.ConcurrentSkipListSet<SingleNetworkMap> getNetworkMaps() {
-        java.util.concurrent.ConcurrentSkipListSet<SingleNetworkMap> maps = new java.util.concurrent.ConcurrentSkipListSet<>();
-
+    public List<Network> loadAllNetworks() {
+        List<Network> networks = new ArrayList<>();
         for (NetworkDAO.NetworkData data : networkDAO.getAll()) {
-            getNetworkMap(data.getIdentifier()).ifPresent(maps::add);
-        }
+            Network network = new Network(UUID.fromString(data.getIdentifier()), UUID.fromString(data.getOwnerUuid()));
+            network.setWorld(data.getWorld());
+            network.setX(data.getX());
+            network.setY(data.getY());
+            network.setZ(data.getZ());
+            network.setUpgradeCount(data.getUpgradeCount());
 
-        return maps;
-    }
-
-    public java.util.Optional<SingleNetworkMap> getNetworkMap(String identifier) {
-        return networkDAO.getById(identifier).map(data -> {
-            java.util.List<NetworkBlockDAO.NetworkBlockData> blocks = networkBlockDAO.getByNetworkId(identifier);
-            java.util.concurrent.ConcurrentSkipListSet<LocatedBlock> locatedBlocks = new java.util.concurrent.ConcurrentSkipListSet<>();
-
-            for (NetworkBlockDAO.NetworkBlockData blockData : blocks) {
-                locatedBlocks.add(new LocatedBlock(blockData.getIdentifier(), blockData.getNetworkId(), blockData.getBlockType(), blockData.asBlockLocation(), blockData.getData()));
+            for (NetworkItemDAO.ItemRow row : networkItemDAO.getByNetworkId(data.getIdentifier())) {
+                network.loadItem(row.getItemKey(), row.getItemData(), row.getAmount());
             }
 
-            return new SingleNetworkMap(data.getIdentifier(), data.getOwnerUuid(), locatedBlocks);
-        });
-    }
+            for (NetworkPermissionDAO.PermissionRow row : networkPermissionDAO.getByNetworkId(data.getIdentifier())) {
+                network.getRoles().put(UUID.fromString(row.getPlayerUuid()), row.getRole());
+            }
 
-    public void saveNetworkMap(SingleNetworkMap singleNetworkMap) {
-        networkDAO.insert(singleNetworkMap.getIdentifier(), singleNetworkMap.getOwnerUUID());
-        // Blocks are saved individually by NetworkBlock.onSave()
-    }
+            for (NetworkOpenStatsDAO.OpenStatRow row : networkOpenStatsDAO.getByNetworkId(data.getIdentifier())) {
+                network.getOpenCounts().put(UUID.fromString(row.getPlayerUuid()), row.getOpens());
+            }
 
-    public ConcurrentSkipListSet<Network> getAllNetworks() {
-        ConcurrentSkipListSet<Network> networks = new ConcurrentSkipListSet<>();
-        for (NetworkDAO.NetworkData data : getNetworkDAO().getAll()) {
-            // Check if already in middleware to avoid duplicate instances
-            Network network = getMiddleware().getCachedNetwork(data.getIdentifier())
-                    .orElseGet(() -> new Network(data.getIdentifier(), data.getOwnerUuid()));
-
-            // 1. Load all block data into the network's map
-            getNetworkBlockDAO().getByNetworkId(data.getIdentifier()).forEach(blockData -> {
-                LocatedBlock locatedBlock = new LocatedBlock(
-                        blockData.getIdentifier(),
-                        blockData.getNetworkId(),
-                        blockData.getBlockType(),
-                        blockData.asBlockLocation(),
-                        blockData.getData()
-                );
-                network.getNetworkMap().addLocatedBlock(locatedBlock);
-            });
-
-            // 2. Set the controller and instantiate all blocks
-            network.getNetworkMap().getControllerImpl(Optional.of(network)).ifPresent(network::setController);
-            network.updateCache(); // This creates the live NetworkBlock instances (Drives, Viewers, etc.)
-
-            // 3. Load disks for any Drive blocks found
-            network.getBlocks().forEach(block -> {
-                if (block instanceof Drive) {
-                    Drive drive = (Drive) block;
-                    getDiskDAO().getByDriveId(drive.getIdentifier()).forEach(diskData -> {
-                        // Use NetworkManager to ensure disk is cached in middleware
-                        StorageDisk disk = gg.drak.restored.data.NetworkManager.getOrGetDisk(drive, diskData.getIdentifier(), diskData.getSlot());
-                        disk.setCapacity(diskData.getCapacity());
-                        disk.setContents(diskData.getItems());
-                        drive.getDisks().put(diskData.getSlot(), disk);
-                    });
+            for (NetworkAugmentDAO.AugmentRow row : networkAugmentDAO.getByNetworkId(data.getIdentifier())) {
+                network.loadAugment(row.getType());
+                if (row.getType() == gg.drak.restored.data.AugmentType.ENCHANTING) {
+                    network.loadEnchantingBookshelves(row.getEnchantingBookshelves());
                 }
-            });
+            }
 
-            // 4. Load permissions
-            getPermissionDAO().getByNetworkId(data.getIdentifier()).forEach(permissionData -> {
-                network.getPermissionSystem().trust(permissionData.getPermissionNode(), permissionData.getPlayerUuid());
-            });
+            for (NetworkLinkedChestDAO.LinkedChestRow row : networkLinkedChestDAO.getByNetworkId(data.getIdentifier())) {
+                network.loadLinkedChest(row.getWorld(), row.getX(), row.getY(), row.getZ());
+                Location location = LinkedChestStorage.parseLocationKey(
+                        gg.drak.restored.data.NetworkManager.locationKey(row.getWorld(), row.getX(), row.getY(), row.getZ())
+                );
+                if (location != null && location.getWorld() != null) {
+                    NetworkBlockTags.setLinkedNetworkId(location.getBlock(), network.getIdentifier());
+                }
+            }
 
+            network.getDirty().set(false);
             networks.add(network);
         }
         return networks;
+    }
+
+    /**
+     * Queue an async save. Prefer this from gameplay code.
+     */
+    public void saveNetwork(Network network) {
+        middleware.queueNetworkSave(network);
+    }
+
+    /**
+     * Queue an async delete. Prefer this from gameplay code.
+     */
+    public void deleteNetwork(Network network) {
+        middleware.queueNetworkDelete(network);
+    }
+
+    /**
+     * Blocking persist used by the async flush worker.
+     */
+    public void persistSnapshot(NetworkSnapshot snapshot) {
+        networkDAO.save(new NetworkDAO.NetworkData(
+                snapshot.getIdentifier(),
+                snapshot.getOwnerUuid(),
+                snapshot.getWorld(),
+                snapshot.getX(),
+                snapshot.getY(),
+                snapshot.getZ(),
+                snapshot.getUpgradeCount(),
+                snapshot.getTotalOpens()
+        ));
+
+        networkItemDAO.deleteAll(snapshot.getIdentifier());
+        for (NetworkSnapshot.ItemEntry entry : snapshot.getItems()) {
+            networkItemDAO.save(
+                    snapshot.getIdentifier(),
+                    entry.getItemKey(),
+                    entry.getItemData(),
+                    entry.getAmount()
+            );
+        }
+
+        networkPermissionDAO.deleteAll(snapshot.getIdentifier());
+        for (NetworkSnapshot.PermissionEntry entry : snapshot.getPermissions()) {
+            networkPermissionDAO.save(
+                    snapshot.getIdentifier(),
+                    entry.getPlayerUuid(),
+                    entry.getRole()
+            );
+        }
+
+        networkOpenStatsDAO.deleteAll(snapshot.getIdentifier());
+        for (NetworkSnapshot.OpenStatEntry entry : snapshot.getOpenStats()) {
+            networkOpenStatsDAO.save(
+                    snapshot.getIdentifier(),
+                    entry.getPlayerUuid(),
+                    entry.getOpens()
+            );
+        }
+
+        networkAugmentDAO.deleteAll(snapshot.getIdentifier());
+        for (var type : snapshot.getAugments()) {
+            networkAugmentDAO.save(snapshot.getIdentifier(), type,
+                    type == gg.drak.restored.data.AugmentType.ENCHANTING
+                            ? snapshot.getEnchantingBookshelves() : 0);
+        }
+
+        networkLinkedChestDAO.deleteAll(snapshot.getIdentifier());
+        for (NetworkSnapshot.LinkedChestEntry entry : snapshot.getLinkedChests()) {
+            networkLinkedChestDAO.save(
+                    snapshot.getIdentifier(),
+                    entry.getWorld(),
+                    entry.getX(),
+                    entry.getY(),
+                    entry.getZ()
+            );
+        }
+    }
+
+    /**
+     * Blocking delete used by the async flush worker.
+     */
+    public void deleteNetworkSync(String identifier) {
+        networkDAO.delete(identifier);
     }
 }

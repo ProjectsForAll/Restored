@@ -1,291 +1,343 @@
 package gg.drak.restored.events;
 
-import host.plas.bou.gui.ScreenManager;
-import host.plas.bou.gui.screens.ScreenInstance;
 import gg.drak.restored.Restored;
+import gg.drak.restored.data.Network;
 import gg.drak.restored.data.NetworkManager;
-import gg.drak.restored.data.blocks.NetworkBlock;
-import gg.drak.restored.data.blocks.impl.CraftingViewer;
-import gg.drak.restored.data.blocks.impl.Drive;
-import gg.drak.restored.data.blocks.impl.Viewer;
-import gg.drak.restored.data.blocks.inventory.InventoryBlock;
-import gg.drak.restored.gui.NetworkGuiScreenInstance;
-import org.bukkit.entity.HumanEntity;
+import gg.drak.restored.gui.NetworkItemsGui;
+import gg.drak.restored.gui.NetworkManageGui;
+import gg.drak.restored.items.ChestLinkingToolItem;
+import gg.drak.restored.items.NetworkChestItem;
+import gg.drak.restored.items.NetworkUpgradeItem;
+import gg.drak.restored.items.PocketLinkItem;
+import gg.drak.restored.util.LegacyColors;
+import gg.drak.restored.util.LinkedChestStorage;
+import gg.drak.restored.util.NetworkBlockTags;
+import org.bukkit.Material;
+import org.bukkit.block.Block;
+import org.bukkit.block.BlockFace;
+import org.bukkit.block.data.type.Chest;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
-import org.bukkit.block.Block;
+import org.bukkit.event.block.Action;
 import org.bukkit.event.block.BlockBreakEvent;
+import org.bukkit.event.block.BlockBurnEvent;
+import org.bukkit.event.block.BlockExplodeEvent;
 import org.bukkit.event.block.BlockPlaceEvent;
-import org.bukkit.event.inventory.*;
+import org.bukkit.event.entity.EntityChangeBlockEvent;
+import org.bukkit.event.entity.EntityExplodeEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
-import org.bukkit.inventory.Inventory;
+import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.inventory.ItemStack;
 
+import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Optional;
-import java.util.concurrent.ConcurrentSkipListMap;
-import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.UUID;
 
 public class MainListener implements Listener {
+
     public MainListener() {
         Restored.getInstance().registerListener(this);
-
         Restored.getInstance().logInfo("Registered MainListener!");
     }
 
-    @EventHandler
-    public void onBlockBreak(BlockBreakEvent event) {
-        NetworkManager.onBreakBlock(event);
-    }
-
-    @EventHandler
-    public void onBlockClick(PlayerInteractEvent event) {
-        NetworkManager.onBlockClick(event);
-    }
-
-    @EventHandler
+    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onBlockPlace(BlockPlaceEvent event) {
-        NetworkManager.onBlockPlace(event);
-    }
-
-    /**
-     * Runs at {@link EventPriority#HIGHEST} so Obliviate/ScreenInstance can mark the click cancelled first;
-     * we still apply network insert logic and cursor updates manually.
-     */
-    @EventHandler(priority = EventPriority.HIGHEST)
-    public void onInsertItem(InventoryClickEvent event) {
-        List<HumanEntity> viewers = event.getViewers();
-        if (viewers.isEmpty()) return;
-
-        HumanEntity viewer = viewers.get(0);
-        for (int i = 0; i < viewers.size(); i++) {
-            viewer = viewers.get(i);
-            if (viewer instanceof Player) {
-                break;
-            }
-        }
-
-        if (! (viewer instanceof Player)) return;
-        Player player = (Player) viewer;
-
-        if (! ScreenManager.hasScreen(player)) {
+        ItemStack item = event.getItemInHand();
+        if (!NetworkChestItem.isType(item)) {
             return;
         }
-        ScreenInstance screen = ScreenManager.getScreen(player).get(); // not null
 
-        InventoryAction action = event.getAction();
+        Player player = event.getPlayer();
+        Block block = event.getBlockPlaced();
+        UUID networkId = NetworkChestItem.getNetworkId(item);
 
-        // Handle placing items into the network inventory
-        if (action == InventoryAction.PLACE_ONE || action == InventoryAction.PLACE_SOME || action == InventoryAction.PLACE_ALL || action == InventoryAction.SWAP_WITH_CURSOR) {
-            Inventory inventory = event.getClickedInventory();
-            if (inventory == null) return;
-
-            // If clicking in the top inventory (the network screen)
-            if (screen.getInventory().equals(inventory)) {
-                int slot = event.getRawSlot();
-                if (shouldSkipManualDeposit(screen, slot)) {
-                    return;
-                }
-                ItemStack cur = event.getCursor();
-                if (cur == null || cur.getType().isAir()) {
-                    return;
-                }
-                if (handlePutItem(event, PutType.CURSOR_PLACE, action)) {
+        Network network;
+        if (networkId != null) {
+            network = NetworkManager.get(networkId);
+            if (network == null) {
+                player.sendMessage(LegacyColors.color("#FF5555That network no longer exists."));
+                event.setCancelled(true);
+                return;
+            }
+            if (!network.isOwner(player.getUniqueId())) {
+                player.sendMessage(LegacyColors.color("#FF5555Only the owner can place this network chest."));
+                event.setCancelled(true);
+                return;
+            }
+            if (network.isPlaced()) {
+                Network existing = NetworkManager.getByLocation(network.getLocation());
+                if (existing != null && existing.getIdentifier().equals(network.getIdentifier())) {
+                    player.sendMessage(LegacyColors.color("#FF5555This network is already placed."));
                     event.setCancelled(true);
-                }
-                return;
-            }
-        }
-
-        // Handle shift-clicking from player inventory into network inventory
-        ClickType type = event.getClick();
-        if (type == ClickType.SHIFT_LEFT || type == ClickType.SHIFT_RIGHT) {
-            Inventory inventory = event.getClickedInventory();
-            if (inventory == null) return;
-
-            // If clicking in the bottom inventory (player inventory) and top is a network screen
-            if (! screen.getInventory().equals(inventory)) {
-                if (handlePutItem(event, PutType.SHIFT_CLICK_FROM_OWN, action)) {
-                    event.setCancelled(true);
-                }
-                return;
-            } else {
-                // If shift-clicking from the network screen, we should allow it (it will be handled by the library/Icons)
-                return;
-            }
-        }
-    }
-
-    /**
-     * Obliviate/noPlace GUIs cancel drags by default; allow drags that only touch the crafting grid.
-     */
-    @EventHandler(priority = EventPriority.HIGHEST)
-    public void onInventoryDragIntoCrafting(InventoryDragEvent event) {
-        if (! (event.getWhoClicked() instanceof Player)) return;
-        Player player = (Player) event.getWhoClicked();
-        if (! ScreenManager.hasScreen(player)) return;
-
-        ScreenInstance screen = ScreenManager.getScreen(player).get();
-        if (! (screen.getScreenBlock().orElse(null) instanceof CraftingViewer)) return;
-
-        int topSize = event.getView().getTopInventory().getSize();
-        boolean touchesTop = false;
-        for (int raw : event.getRawSlots()) {
-            if (raw < topSize) {
-                touchesTop = true;
-                if (! CraftingViewer.isCraftingSlot(raw)) {
                     return;
                 }
             }
-        }
-        if (touchesTop) {
-            event.setCancelled(false);
-        }
-    }
-
-    /**
-     * Crafting grid must use vanilla placement; viewer pagination row is UI-only.
-     */
-    private static boolean shouldSkipManualDeposit(ScreenInstance screen, int rawSlot) {
-        if (screen instanceof NetworkGuiScreenInstance gui && gui.isVanillaPlaceSlot(rawSlot)) {
-            return true;
-        }
-
-        return screen.getScreenBlock().map(block -> {
-            if (block instanceof Viewer) {
-                return rawSlot >= 45;
+            if (!LinkedChestStorage.allLinksWithinRange(network, block.getLocation())) {
+                event.setCancelled(true);
+                player.sendMessage(LegacyColors.color("#FF5555Cannot place here: one or more linked chests are farther than "
+                        + LinkedChestStorage.MAX_LINK_DISTANCE + " blocks. Unlink them first."));
+                return;
             }
-            return false;
-        }).orElse(false);
+            NetworkManager.updateLocation(network, network.getLocation(), block.getLocation());
+            network.save();
+        } else {
+            network = NetworkManager.create(player, block.getLocation());
+        }
+
+        // Face the player (same as vanilla chest placement).
+        BlockFace facing = player.getFacing().getOppositeFace();
+        if (facing != BlockFace.NORTH && facing != BlockFace.SOUTH
+                && facing != BlockFace.EAST && facing != BlockFace.WEST) {
+            facing = BlockFace.NORTH;
+        }
+        Chest chestData = (Chest) Material.CHEST.createBlockData();
+        chestData.setFacing(facing);
+        block.setBlockData(chestData);
+        NetworkBlockTags.setNetworkId(block, network.getIdentifier());
     }
 
-    public static boolean handlePutItem(InventoryClickEvent event, PutType type, InventoryAction action) {
-        AtomicBoolean handled = new AtomicBoolean(false);
-        ConcurrentSkipListMap<Integer, Player> viewers = new ConcurrentSkipListMap<>();
-        event.getViewers().forEach(viewer -> {
-            if (! (viewer instanceof Player)) return;
-            Player player = (Player) viewer;
-            viewers.put(viewers.size(), player);
-        });
-
-        viewers.forEach((i, player) -> {
-            try {
-                ScreenManager.getScreen(player).flatMap(ScreenInstance::getScreenBlock).ifPresent(block -> {
-                    try {
-                        if (! (block instanceof NetworkBlock)) {
-                            return;
-                        }
-
-                        NetworkBlock networkBlock = (NetworkBlock) block;
-                        InventoryBlock invBlock = null;
-                        if (networkBlock instanceof Drive) {
-                            invBlock = (Drive) networkBlock;
-                        } else if (networkBlock instanceof Viewer) {
-                            invBlock = (Viewer) networkBlock;
-                        } else if (networkBlock instanceof CraftingViewer) {
-                            invBlock = (CraftingViewer) networkBlock;
-                        } else if (networkBlock instanceof InventoryBlock) {
-                            invBlock = (InventoryBlock) networkBlock;
-                        }
-
-                        if (invBlock == null) {
-                            return;
-                        }
-                        switch (type) {
-                            case CURSOR_PLACE:
-                                ItemStack cursor = event.getCursor();
-                                if (cursor == null || cursor.getType().isAir()) return;
-
-                                ItemStack toInsert = cursor.clone();
-                                if (action == InventoryAction.PLACE_ONE) {
-                                    toInsert.setAmount(1);
-                                }
-
-                                ItemStack afterInsert = invBlock.tryAddItem(toInsert);
-                                int leftoverOnAttempt = afterInsert != null ? afterInsert.getAmount() : 0;
-                                int inserted = toInsert.getAmount() - leftoverOnAttempt;
-                                if (inserted <= 0) {
-                                    return;
-                                }
-                                handled.set(true);
-                                int newCursorAmount = cursor.getAmount() - inserted;
-                                if (newCursorAmount <= 0) {
-                                    event.setCursor(null);
-                                    player.setItemOnCursor(null);
-                                } else {
-                                    ItemStack nextCursor = cursor.clone();
-                                    nextCursor.setAmount(newCursorAmount);
-                                    event.setCursor(nextCursor);
-                                    player.setItemOnCursor(nextCursor);
-                                }
-                                break;
-                            case SHIFT_CLICK_FROM_OWN:
-                                ItemStack itemToShift = event.getCurrentItem();
-                                if (itemToShift == null || itemToShift.getType().isAir()) return;
-
-                                ItemStack shiftLeft = itemToShift.clone();
-                                int beforeAmount = shiftLeft.getAmount();
-                                shiftLeft = invBlock.tryAddItem(shiftLeft);
-                                int leftoverAmount = shiftLeft != null ? shiftLeft.getAmount() : 0;
-                                if (leftoverAmount == beforeAmount) {
-                                    return;
-                                }
-                                handled.set(true);
-
-                                int rawSlot = event.getRawSlot();
-                                if (leftoverAmount <= 0) {
-                                    event.setCurrentItem(null);
-                                    event.getView().setItem(rawSlot, null);
-                                } else {
-                                    event.setCurrentItem(shiftLeft);
-                                    event.getView().setItem(rawSlot, shiftLeft);
-                                }
-                                break;
-                        }
-                    } catch (Throwable e) {
-                        Restored.getInstance().logSevere("Error while handling put item event [1]: " + e.getMessage(), e);
-                    }
-                });
-            } catch (Throwable e) {
-                Restored.getInstance().logSevere("Error while handling put item event [2]: " + e.getMessage(), e);
+    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+    public void onBlockBreak(BlockBreakEvent event) {
+        Block block = event.getBlock();
+        Network network = resolveNetwork(block);
+        if (network != null) {
+            Player player = event.getPlayer();
+            if (!network.isOwner(player.getUniqueId())) {
+                event.setCancelled(true);
+                player.sendMessage(LegacyColors.color("#FF5555Only the owner can break this network chest."));
+                return;
             }
-        });
-        return handled.get();
+
+            if (!network.isEmpty()) {
+                event.setCancelled(true);
+                if (network.getUpgradeCount() > 0 || !network.getInstalledAugments().isEmpty()) {
+                    player.sendMessage(LegacyColors.color(
+                            "#FF5555Remove all Network Upgrades and augments before breaking the chest."));
+                } else {
+                    player.sendMessage(LegacyColors.color("#FF5555Empty the network before breaking the chest."));
+                }
+                return;
+            }
+
+            // Only players may cause a drop, and only when the network is empty.
+            event.setDropItems(false);
+            NetworkBlockTags.clearNetworkId(block);
+            network.delete();
+
+            ItemStack chestDrop = NetworkChestItem.create();
+            HashMap<Integer, ItemStack> leftover = player.getInventory().addItem(chestDrop);
+            leftover.values().forEach(stack -> player.getWorld().dropItemNaturally(player.getLocation(), stack));
+            player.sendMessage(LegacyColors.color("#AAAAAANetwork deleted."));
+            return;
+        }
+
+        // Linked storage chest: allow vanilla break/drops, drop the link.
+        clearLinkedChestIfPresent(block);
     }
 
-    /**
-     * Prevent vanilla hopper mechanics from moving items into or out of blocks
-     * that are network blocks (e.g. Importer uses HOPPER material).
-     * Without this, items thrown into the hopper get sucked into its internal
-     * inventory and are never seen by the Importer tick logic.
-     */
-    @EventHandler(priority = EventPriority.HIGHEST)
-    public void onHopperMoveItem(InventoryMoveItemEvent event) {
-        Inventory source = event.getSource();
-        Inventory destination = event.getDestination();
+    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+    public void onEntityExplode(EntityExplodeEvent event) {
+        protectNetworkBlocks(event.blockList());
+        clearLinkedChestsInList(event.blockList());
+    }
 
-        if (isNetworkBlockInventory(source) || isNetworkBlockInventory(destination)) {
+    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+    public void onBlockExplode(BlockExplodeEvent event) {
+        protectNetworkBlocks(event.blockList());
+        clearLinkedChestsInList(event.blockList());
+    }
+
+    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+    public void onBlockBurn(BlockBurnEvent event) {
+        if (resolveNetwork(event.getBlock()) != null) {
             event.setCancelled(true);
         }
     }
 
-    private boolean isNetworkBlockInventory(Inventory inventory) {
-        if (inventory == null) return false;
-        if (inventory.getHolder() == null) return false;
-        if (!(inventory.getHolder() instanceof org.bukkit.block.BlockState)) return false;
-
-        org.bukkit.block.BlockState state = (org.bukkit.block.BlockState) inventory.getHolder();
-        Block block = state.getBlock();
-
-        Optional<NetworkBlock> networkBlock = NetworkManager.getNetworkBlockAt(block);
-        return networkBlock.isPresent();
+    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+    public void onEntityChangeBlock(EntityChangeBlockEvent event) {
+        if (resolveNetwork(event.getBlock()) != null) {
+            event.setCancelled(true);
+        }
     }
 
-    public enum PutType {
-        SHIFT_CLICK_FROM_OWN,
-        CURSOR_PLACE,
-        ;
+    private void protectNetworkBlocks(List<Block> blocks) {
+        Iterator<Block> iterator = blocks.iterator();
+        while (iterator.hasNext()) {
+            if (resolveNetwork(iterator.next()) != null) {
+                iterator.remove();
+            }
+        }
+    }
+
+    @EventHandler(priority = EventPriority.HIGH)
+    public void onPlayerInteract(PlayerInteractEvent event) {
+        if (event.getClickedBlock() == null || event.getHand() != EquipmentSlot.HAND) {
+            return;
+        }
+
+        Block block = event.getClickedBlock();
+        if (block.getType() != Material.CHEST) {
+            return;
+        }
+
+        Network network = resolveNetwork(block);
+        if (network == null) {
+            return;
+        }
+
+        Action action = event.getAction();
+        Player player = event.getPlayer();
+
+        if (action == Action.LEFT_CLICK_BLOCK) {
+            handleLeftClickChest(event, player, network);
+            return;
+        }
+
+        if (action != Action.RIGHT_CLICK_BLOCK) {
+            return;
+        }
+
+        ItemStack mainHand = player.getInventory().getItemInMainHand();
+        // Pocket Link / Chest Linking Tool shift-right-click handles bind instead of manage GUI.
+        if (player.isSneaking() && (PocketLinkItem.isType(mainHand) || ChestLinkingToolItem.isType(mainHand))) {
+            return;
+        }
+
+        if (!network.canAccess(player.getUniqueId())) {
+            event.setCancelled(true);
+            player.sendMessage(LegacyColors.color("#FF5555You do not have access to this network."));
+            return;
+        }
+
+        event.setCancelled(true);
+        if (player.isSneaking() && network.canManage(player.getUniqueId())) {
+            new NetworkManageGui(player, network, () -> new NetworkItemsGui(player, network).open()).open();
+        } else {
+            new NetworkItemsGui(player, network).open();
+        }
+    }
+
+    private void handleLeftClickChest(PlayerInteractEvent event, Player player, Network network) {
+        if (player.isSneaking()) {
+            event.setCancelled(true);
+            removeUpgradeFromChest(player, network);
+            return;
+        }
+
+        ItemStack hand = player.getInventory().getItemInMainHand();
+        if (!NetworkUpgradeItem.isType(hand)) {
+            return;
+        }
+
+        event.setCancelled(true);
+        applyUpgradeToChest(player, network, hand);
+    }
+
+    private void applyUpgradeToChest(Player player, Network network, ItemStack hand) {
+        if (!network.canManage(player.getUniqueId())) {
+            player.sendMessage(LegacyColors.color("#FF5555You cannot upgrade this network."));
+            return;
+        }
+
+        network.addUpgrade();
+        network.save();
+        hand.setAmount(hand.getAmount() - 1);
+        player.sendMessage(LegacyColors.color("#00FC88Upgrade applied. Capacity is now " + network.getCapacity() + "."));
+    }
+
+    private void removeUpgradeFromChest(Player player, Network network) {
+        if (!network.canManage(player.getUniqueId())) {
+            player.sendMessage(LegacyColors.color("#FF5555You cannot remove upgrades from this network."));
+            return;
+        }
+        if (network.getUpgradeCount() <= 0) {
+            player.sendMessage(LegacyColors.color("#FF5555This network has no upgrades to remove."));
+            return;
+        }
+        if (!network.removeUpgrade()) {
+            player.sendMessage(LegacyColors.color("#FF5555Cannot remove an upgrade while items exceed the lower capacity."));
+            return;
+        }
+        network.save();
+
+        ItemStack upgrade = NetworkUpgradeItem.create();
+        HashMap<Integer, ItemStack> leftover = player.getInventory().addItem(upgrade);
+        if (!leftover.isEmpty()) {
+            leftover.values().forEach(stack -> player.getWorld().dropItemNaturally(player.getLocation(), stack));
+        }
+        player.sendMessage(LegacyColors.color("#00FC88Upgrade removed. Capacity is now " + network.getCapacity() + "."));
+    }
+
+    private void clearLinkedChestsInList(List<Block> blocks) {
+        for (Block block : blocks) {
+            if (block.getType() == Material.CHEST) {
+                clearLinkedChestIfPresent(block);
+            }
+        }
+    }
+
+    private void clearLinkedChestIfPresent(Block block) {
+        Block canonical = block.getType() == Material.CHEST
+                ? LinkedChestStorage.canonicalChestBlock(block)
+                : null;
+        Block target = canonical != null ? canonical : block;
+
+        Optional<UUID> linkedId = NetworkBlockTags.getLinkedNetworkId(target);
+        if (linkedId.isEmpty() && target != block) {
+            linkedId = NetworkBlockTags.getLinkedNetworkId(block);
+        }
+
+        String key = NetworkManager.locationKey(target.getLocation());
+        Network network = linkedId.map(NetworkManager::get).orElse(null);
+        if (network == null) {
+            for (Network candidate : NetworkManager.getNetworks()) {
+                if (candidate.hasLinkedChestKey(key)) {
+                    network = candidate;
+                    break;
+                }
+            }
+        }
+        if (network == null && block.getBlockData() instanceof org.bukkit.block.data.type.Chest chestData
+                && chestData.getType() != org.bukkit.block.data.type.Chest.Type.SINGLE) {
+            Block other = LinkedChestStorage.otherHalf(block, chestData);
+            if (other != null) {
+                String otherKey = NetworkManager.locationKey(other.getLocation());
+                for (Network candidate : NetworkManager.getNetworks()) {
+                    if (candidate.hasLinkedChestKey(otherKey)) {
+                        network = candidate;
+                        key = otherKey;
+                        target = other;
+                        break;
+                    }
+                }
+            }
+        }
+        if (network == null) {
+            NetworkBlockTags.clearLinkedNetworkId(block);
+            if (canonical != null) {
+                NetworkBlockTags.clearLinkedNetworkId(canonical);
+            }
+            return;
+        }
+
+        network.removeLinkedChestKey(key);
+        NetworkBlockTags.clearLinkedNetworkId(target);
+        NetworkBlockTags.clearLinkedNetworkId(block);
+        network.save();
+    }
+
+    private Network resolveNetwork(Block block) {
+        Network byLocation = NetworkManager.getByLocation(block.getLocation());
+        if (byLocation != null) {
+            return byLocation;
+        }
+        return NetworkBlockTags.getNetworkId(block)
+                .map(NetworkManager::get)
+                .orElse(null);
     }
 }

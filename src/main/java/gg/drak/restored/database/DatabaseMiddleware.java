@@ -2,34 +2,32 @@ package gg.drak.restored.database;
 
 import gg.drak.restored.Restored;
 import gg.drak.restored.data.Network;
-import gg.drak.restored.data.disks.StorageDisk;
-import gg.drak.restored.data.blocks.NetworkBlock;
-import gg.drak.restored.database.dao.DiskDAO;
-import gg.drak.restored.database.dao.NetworkBlockDAO;
-import gg.drak.restored.database.dao.NetworkDAO;
 import lombok.Getter;
 import org.bukkit.scheduler.BukkitRunnable;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.function.Consumer;
 
 /**
- * Middleware for caching database operations and executing them in async batches.
- * Also acts as a write-through cache for immediate data consistency.
+ * In-memory network cache plus coalesced async persistence.
+ * Mutations update the cache immediately; DB writes are flushed off the main thread.
  */
 public class DatabaseMiddleware {
     private final MainOperator operator;
     private final ConcurrentLinkedQueue<DatabaseOperation> operationQueue;
-    private final int batchSize = 50;
-    private final long flushIntervalTicks = 20L; // 1 second
+    private final ConcurrentHashMap<UUID, NetworkSnapshot> pendingSaves = new ConcurrentHashMap<>();
+    private final ConcurrentLinkedQueue<String> pendingDeletes = new ConcurrentLinkedQueue<>();
+    private final Object flushLock = new Object();
 
-    // High-level object caches (Source of Truth)
-    private final ConcurrentHashMap<String, StorageDisk> diskCache = new ConcurrentHashMap<>();
-    private final ConcurrentHashMap<String, NetworkBlock> blockCache = new ConcurrentHashMap<>();
+    private final int batchSize = 50;
+    private final long flushIntervalTicks = 20L;
+
     private final ConcurrentHashMap<String, Network> networkCache = new ConcurrentHashMap<>();
 
     public DatabaseMiddleware(MainOperator operator) {
@@ -42,36 +40,33 @@ public class DatabaseMiddleware {
         operationQueue.add(new DatabaseOperation(statement, parameterSetter));
     }
 
-    public void cacheDisk(StorageDisk disk) {
-        diskCache.put(disk.getIdentifier(), disk);
+    /**
+     * Capture a snapshot on the calling thread and queue it for async DB write.
+     * Newer snapshots for the same network replace older pending ones.
+     */
+    public void queueNetworkSave(Network network) {
+        cacheNetwork(network);
+        if (!network.isDirty()) {
+            return;
+        }
+        NetworkSnapshot snapshot = NetworkSnapshot.capture(network);
+        network.getDirty().set(false);
+        pendingSaves.put(network.getIdentifier(), snapshot);
     }
 
-    public void cacheBlock(NetworkBlock block) {
-        blockCache.put(block.getIdentifier(), block);
+    public void queueNetworkDelete(Network network) {
+        UUID id = network.getIdentifier();
+        pendingSaves.remove(id);
+        removeNetworkFromCache(network.getIdentifierString());
+        pendingDeletes.add(network.getIdentifierString());
     }
 
     public void cacheNetwork(Network network) {
-        networkCache.put(network.getIdentifier(), network);
-    }
-
-    public void removeDiskFromCache(String identifier) {
-        diskCache.remove(identifier);
-    }
-
-    public void removeBlockFromCache(String identifier) {
-        blockCache.remove(identifier);
+        networkCache.put(network.getIdentifierString(), network);
     }
 
     public void removeNetworkFromCache(String identifier) {
         networkCache.remove(identifier);
-    }
-
-    public Optional<StorageDisk> getCachedDisk(String identifier) {
-        return Optional.ofNullable(diskCache.get(identifier));
-    }
-
-    public Optional<NetworkBlock> getCachedBlock(String identifier) {
-        return Optional.ofNullable(blockCache.get(identifier));
     }
 
     public Optional<Network> getCachedNetwork(String identifier) {
@@ -80,10 +75,6 @@ public class DatabaseMiddleware {
 
     public List<Network> getAllCachedNetworks() {
         return new ArrayList<>(networkCache.values());
-    }
-
-    public List<StorageDisk> getAllCachedDisks() {
-        return new ArrayList<>(diskCache.values());
     }
 
     private void startFlushTask() {
@@ -95,8 +86,54 @@ public class DatabaseMiddleware {
         }.runTaskTimerAsynchronously(Restored.getInstance(), flushIntervalTicks, flushIntervalTicks);
     }
 
+    /**
+     * Persist all pending network saves/deletes and any queued SQL ops.
+     * Safe to call from async workers; also used on shutdown.
+     */
     public void flush() {
-        if (operationQueue.isEmpty()) return;
+        synchronized (flushLock) {
+            flushPendingDeletes();
+            flushPendingSaves();
+            flushOperationQueue();
+        }
+    }
+
+    private void flushPendingDeletes() {
+        String id;
+        while ((id = pendingDeletes.poll()) != null) {
+            try {
+                operator.deleteNetworkSync(id);
+            } catch (Exception e) {
+                Restored.getInstance().logSevere("Failed to delete network " + id + " asynchronously", e);
+            }
+        }
+    }
+
+    private void flushPendingSaves() {
+        if (pendingSaves.isEmpty()) {
+            return;
+        }
+
+        List<Map.Entry<UUID, NetworkSnapshot>> batch = new ArrayList<>(pendingSaves.entrySet());
+        for (Map.Entry<UUID, NetworkSnapshot> entry : batch) {
+            if (!pendingSaves.remove(entry.getKey(), entry.getValue())) {
+                // Replaced by a newer snapshot while iterating; skip this stale one.
+                continue;
+            }
+            try {
+                operator.persistSnapshot(entry.getValue());
+            } catch (Exception e) {
+                Restored.getInstance().logSevere("Failed to save network " + entry.getKey() + " asynchronously", e);
+                // Re-queue so a later flush can retry.
+                pendingSaves.putIfAbsent(entry.getKey(), entry.getValue());
+            }
+        }
+    }
+
+    private void flushOperationQueue() {
+        if (operationQueue.isEmpty()) {
+            return;
+        }
 
         List<DatabaseOperation> batch = new ArrayList<>();
         DatabaseOperation op;
@@ -104,48 +141,41 @@ public class DatabaseMiddleware {
             batch.add(op);
         }
 
-        if (batch.isEmpty()) return;
+        if (batch.isEmpty()) {
+            return;
+        }
 
-        // Group by statement to maintain execution order for the same statement,
-        // but we must process statements in the order they appeared in the batch
-        // to respect foreign key constraints if different statements are mixed.
-        // However, JDBC batching is most efficient when we group by statement.
-        
-        // To be safe with foreign keys, we'll process the batch in order, 
-        // but still use JDBC batching for consecutive identical statements.
-        
         try {
             operator.ensureUsable();
             operator.getConnection().setAutoCommit(false);
-            
+
             String currentStatement = null;
             java.sql.PreparedStatement pstmt = null;
-            
+
             try {
                 for (DatabaseOperation operation : batch) {
                     if (currentStatement == null || !currentStatement.equals(operation.getStatement())) {
-                        // Execute previous batch if it exists
                         if (pstmt != null) {
                             pstmt.executeBatch();
                             pstmt.close();
                         }
-                        
                         currentStatement = operation.getStatement();
                         pstmt = operator.getConnection().prepareStatement(currentStatement);
                     }
-                    
                     operation.getParameterSetter().accept(pstmt);
                     pstmt.addBatch();
                 }
-                
+
                 if (pstmt != null) {
                     pstmt.executeBatch();
                     pstmt.close();
                 }
-                
+
                 operator.getConnection().commit();
             } catch (Exception e) {
-                if (pstmt != null) pstmt.close();
+                if (pstmt != null) {
+                    pstmt.close();
+                }
                 operator.getConnection().rollback();
                 Restored.getInstance().logSevere("Failed to execute JDBC batch", e);
             } finally {
@@ -154,8 +184,7 @@ public class DatabaseMiddleware {
         } catch (Exception e) {
             Restored.getInstance().logSevere("Failed to manage connection for batched operations", e);
         }
-        
-        // If there's more in the queue, schedule another flush immediately
+
         if (!operationQueue.isEmpty()) {
             new BukkitRunnable() {
                 @Override
