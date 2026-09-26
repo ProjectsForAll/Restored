@@ -29,6 +29,10 @@ public final class PocketAugmentItem {
                 "#bdc8c9Install in a Pocket Link's Pocket Augments GUI.",
                 type == gg.drak.restored.data.PocketAugmentType.QUIVER
                         ? "#AAAAAAUses arrows from the linked network."
+                        : type == gg.drak.restored.data.PocketAugmentType.ROCKET_DISTRIBUTER
+                        ? "#AAAAAAReplenishes fireworks from the linked network."
+                        : type == gg.drak.restored.data.PocketAugmentType.MAGNET
+                        ? "#AAAAAAA configurable magnet for nearby items."
                         : "#AAAAAAAdds storage tied to this Pocket Link."
         );
     }

@@ -7,7 +7,9 @@ import org.bukkit.Material;
 public enum PocketAugmentType {
     FEEDING("feeding", "Feeding", Material.GOLDEN_CARROT),
     QUIVER("quiver", "Quiver", Material.ARROW),
-    BACKPACK("backpack", "Backpack", Material.CHEST);
+    ROCKET_DISTRIBUTER("rocket_distributer", "Rocket Distributer", Material.FIREWORK_ROCKET),
+    BACKPACK("backpack", "Backpack", Material.CHEST),
+    MAGNET("magnet", "Magnet", Material.COMPASS);
 
     private final String id;
     private final String displayName;

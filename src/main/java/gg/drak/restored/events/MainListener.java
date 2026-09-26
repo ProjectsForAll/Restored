@@ -7,12 +7,15 @@ import gg.drak.restored.gui.NetworkItemsGui;
 import gg.drak.restored.gui.NetworkManageGui;
 import gg.drak.restored.items.ChestLinkingToolItem;
 import gg.drak.restored.items.NetworkChestItem;
+import gg.drak.restored.items.NetworkHopperItem;
 import gg.drak.restored.items.NetworkUpgradeItem;
 import gg.drak.restored.items.PocketLinkItem;
 import gg.drak.restored.items.RestoredItems;
 import gg.drak.restored.util.LegacyColors;
 import gg.drak.restored.util.LinkedChestStorage;
 import gg.drak.restored.util.NetworkBlockTags;
+import gg.drak.restored.util.NetworkHopperStorage;
+import gg.drak.restored.data.NetworkHopperRole;
 import org.bukkit.Material;
 import org.bukkit.block.Block;
 import org.bukkit.block.BlockFace;
@@ -48,7 +51,8 @@ public class MainListener implements Listener {
     @EventHandler(priority = EventPriority.LOWEST)
     public void preventNonPlaceableRestoredItems(BlockPlaceEvent event) {
         ItemStack item = event.getItemInHand();
-        if (!RestoredItems.isRestoredItem(item) || NetworkChestItem.isType(item)) {
+        if (!RestoredItems.isRestoredItem(item) || NetworkChestItem.isType(item)
+                || NetworkHopperItem.getRole(item) != null) {
             return;
         }
         event.setCancelled(true);
@@ -58,6 +62,11 @@ public class MainListener implements Listener {
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onBlockPlace(BlockPlaceEvent event) {
         ItemStack item = event.getItemInHand();
+        NetworkHopperRole hopperRole = NetworkHopperItem.getRole(item);
+        if (hopperRole != null) {
+            handleHopperPlace(event, hopperRole);
+            return;
+        }
         if (!NetworkChestItem.isType(item)) {
             return;
         }
@@ -90,7 +99,7 @@ public class MainListener implements Listener {
             if (!LinkedChestStorage.allLinksWithinRange(network, block.getLocation())) {
                 event.setCancelled(true);
                 player.sendMessage(LegacyColors.color("#FF5555Cannot place here: one or more linked chests are farther than "
-                        + LinkedChestStorage.MAX_LINK_DISTANCE + " blocks. Unlink them first."));
+                        + LinkedChestStorage.getLinkDistanceDescription() + ". Unlink them first."));
                 return;
             }
             NetworkManager.updateLocation(network, network.getLocation(), block.getLocation());
@@ -114,6 +123,10 @@ public class MainListener implements Listener {
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onBlockBreak(BlockBreakEvent event) {
         Block block = event.getBlock();
+        if (NetworkHopperStorage.isHopper(block)) {
+            handleHopperBreak(event, block);
+            return;
+        }
         Network network = resolveNetwork(block);
         if (network != null) {
             Player player = event.getPlayer();
@@ -147,7 +160,7 @@ public class MainListener implements Listener {
         }
 
         // Linked storage chest: allow vanilla break/drops, drop the link.
-        clearLinkedChestIfPresent(block);
+        clearLinkedStorageIfPresent(block);
     }
 
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
@@ -192,6 +205,9 @@ public class MainListener implements Listener {
         }
 
         Block block = event.getClickedBlock();
+        if (NetworkHopperStorage.isHopper(block)) {
+            return;
+        }
         if (block.getType() != Material.CHEST) {
             return;
         }
@@ -286,16 +302,22 @@ public class MainListener implements Listener {
 
     private void clearLinkedChestsInList(List<Block> blocks) {
         for (Block block : blocks) {
-            if (block.getType() == Material.CHEST) {
-                clearLinkedChestIfPresent(block);
+            if (NetworkHopperStorage.isHopper(block)) {
+                Network network = NetworkHopperStorage.resolveNetwork(block);
+                if (network != null) {
+                    NetworkHopperStorage.unlink(block, network);
+                    network.save();
+                } else {
+                    NetworkBlockTags.clearLinkedNetworkId(block);
+                }
+            } else if (LinkedChestStorage.isSupportedStorage(block)) {
+                clearLinkedStorageIfPresent(block);
             }
         }
     }
 
-    private void clearLinkedChestIfPresent(Block block) {
-        Block canonical = block.getType() == Material.CHEST
-                ? LinkedChestStorage.canonicalChestBlock(block)
-                : null;
+    private void clearLinkedStorageIfPresent(Block block) {
+        Block canonical = LinkedChestStorage.canonicalStorageBlock(block);
         Block target = canonical != null ? canonical : block;
 
         Optional<UUID> linkedId = NetworkBlockTags.getLinkedNetworkId(target);
@@ -340,6 +362,59 @@ public class MainListener implements Listener {
         NetworkBlockTags.clearLinkedNetworkId(target);
         NetworkBlockTags.clearLinkedNetworkId(block);
         network.save();
+    }
+
+    private void handleHopperPlace(BlockPlaceEvent event, NetworkHopperRole role) {
+        Player player = event.getPlayer();
+        Block block = event.getBlockPlaced();
+        UUID linkedId = NetworkHopperItem.getNetworkId(event.getItemInHand());
+        if (linkedId != null) {
+            Network network = NetworkManager.get(linkedId);
+            if (network == null || !network.canManage(player.getUniqueId()) || !network.isPlaced()
+                    || !LinkedChestStorage.isWithinLinkRange(network, block.getLocation())) {
+                event.setCancelled(true);
+                player.sendMessage(LegacyColors.color("#FF5555This network hopper cannot be placed here."));
+                return;
+            }
+        }
+        BlockFace facing = player.getFacing().getOppositeFace();
+        if (facing != BlockFace.NORTH && facing != BlockFace.SOUTH
+                && facing != BlockFace.EAST && facing != BlockFace.WEST) {
+            facing = BlockFace.NORTH;
+        }
+        Chest chestData = (Chest) Material.CHEST.createBlockData();
+        chestData.setFacing(facing);
+        block.setBlockData(chestData);
+        NetworkHopperStorage.setRole(block, role);
+        if (linkedId != null) {
+            Network network = NetworkManager.get(linkedId);
+            NetworkHopperStorage.link(block, network);
+            network.save();
+        }
+    }
+
+    private void handleHopperBreak(BlockBreakEvent event, Block block) {
+        event.setDropItems(false);
+        Network network = NetworkHopperStorage.resolveNetwork(block);
+        UUID networkId = network == null ? null : network.getIdentifier();
+        if (network != null) {
+            NetworkHopperStorage.unlink(block, network);
+            network.save();
+        } else {
+            NetworkBlockTags.clearLinkedNetworkId(block);
+        }
+        NetworkHopperRole role = NetworkHopperStorage.role(block);
+        ItemStack drop = NetworkHopperItem.create(role, networkId);
+        HashMap<Integer, ItemStack> leftover = event.getPlayer().getInventory().addItem(drop);
+        leftover.values().forEach(stack -> block.getWorld().dropItemNaturally(block.getLocation(), stack));
+        if (block.getState() instanceof org.bukkit.block.Container container) {
+            for (ItemStack content : container.getInventory().getContents()) {
+                if (content != null && !content.getType().isAir()) {
+                    block.getWorld().dropItemNaturally(block.getLocation(), content);
+                }
+            }
+            container.getInventory().clear();
+        }
     }
 
     private Network resolveNetwork(Block block) {

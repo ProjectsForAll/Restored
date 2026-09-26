@@ -145,6 +145,7 @@ public class DatabaseMiddleware {
             return;
         }
 
+        boolean batchRequeued = false;
         try {
             operator.ensureUsable();
             operator.getConnection().setAutoCommit(false);
@@ -173,16 +174,31 @@ public class DatabaseMiddleware {
 
                 operator.getConnection().commit();
             } catch (Exception e) {
-                if (pstmt != null) {
-                    pstmt.close();
+                try {
+                    if (pstmt != null) {
+                        pstmt.close();
+                    }
+                } catch (Exception closeError) {
+                    e.addSuppressed(closeError);
                 }
-                operator.getConnection().rollback();
+                try {
+                    operator.getConnection().rollback();
+                } catch (Exception rollbackError) {
+                    e.addSuppressed(rollbackError);
+                }
                 Restored.getInstance().logSevere("Failed to execute JDBC batch", e);
+                // The batch was removed from the queue before execution. Put it back so a
+                // transient database failure does not silently discard writes.
+                requeueBatch(batch);
+                batchRequeued = true;
             } finally {
                 operator.getConnection().setAutoCommit(true);
             }
         } catch (Exception e) {
             Restored.getInstance().logSevere("Failed to manage connection for batched operations", e);
+            if (!batchRequeued) {
+                requeueBatch(batch);
+            }
         }
 
         if (!operationQueue.isEmpty()) {
@@ -192,6 +208,14 @@ public class DatabaseMiddleware {
                     flush();
                 }
             }.runTaskAsynchronously(Restored.getInstance());
+        }
+    }
+
+    private void requeueBatch(List<DatabaseOperation> batch) {
+        // Preserve the order of operations within the failed batch. The queue may contain
+        // newer work already, but reversing a batch can make dependent writes inconsistent.
+        for (DatabaseOperation operation : batch) {
+            operationQueue.add(operation);
         }
     }
 

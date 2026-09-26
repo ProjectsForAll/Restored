@@ -60,6 +60,18 @@ public final class Statements {
                 "FOREIGN KEY (NetworkId) REFERENCES `%table_prefix%Networks`(Identifier) ON DELETE CASCADE " +
                 ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;; " +
 
+                "CREATE TABLE IF NOT EXISTS `%table_prefix%NetworkCompactConfigurations` ( " +
+                "NetworkId VARCHAR(36) NOT NULL, " +
+                "ConfigId VARCHAR(36) NOT NULL, " +
+                "Enabled BOOLEAN NOT NULL DEFAULT TRUE, " +
+                "ItemData TEXT DEFAULT NULL, " +
+                "Quantity BIGINT NOT NULL DEFAULT 9, " +
+                "Action VARCHAR(16) NOT NULL, " +
+                "Operand VARCHAR(32) NOT NULL, " +
+                "PRIMARY KEY (NetworkId, ConfigId), " +
+                "FOREIGN KEY (NetworkId) REFERENCES `%table_prefix%Networks`(Identifier) ON DELETE CASCADE " +
+                ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;; " +
+
                 "CREATE TABLE IF NOT EXISTS `%table_prefix%NetworkLinkedChests` ( " +
                 "NetworkId VARCHAR(36) NOT NULL, " +
                 "World VARCHAR(255) NOT NULL, " +
@@ -68,6 +80,23 @@ public final class Statements {
                 "Z INTEGER NOT NULL, " +
                 "PRIMARY KEY (NetworkId, World(191), X, Y, Z), " +
                 "FOREIGN KEY (NetworkId) REFERENCES `%table_prefix%Networks`(Identifier) ON DELETE CASCADE " +
+                ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;; " +
+
+                "CREATE TABLE IF NOT EXISTS `%table_prefix%NetworkLinkedHoppers` ( " +
+                "NetworkId VARCHAR(36) NOT NULL, " +
+                "World VARCHAR(255) NOT NULL, " +
+                "X INTEGER NOT NULL, " +
+                "Y INTEGER NOT NULL, " +
+                "Z INTEGER NOT NULL, " +
+                "Role VARCHAR(16) NOT NULL, " +
+                "PRIMARY KEY (NetworkId, World(191), X, Y, Z), " +
+                "FOREIGN KEY (NetworkId) REFERENCES `%table_prefix%Networks`(Identifier) ON DELETE CASCADE " +
+                ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;; " +
+
+                "CREATE TABLE IF NOT EXISTS `%table_prefix%PlayerPreferences` ( " +
+                "PlayerUuid VARCHAR(36) NOT NULL, " +
+                "MagnetToNetwork BOOLEAN NOT NULL DEFAULT FALSE, " +
+                "PRIMARY KEY (PlayerUuid) " +
                 ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;; "
         ),
 
@@ -110,12 +139,33 @@ public final class Statements {
 
         GET_NETWORK_AUGMENTS("SELECT * FROM `%table_prefix%NetworkAugments` WHERE NetworkId = ?;"),
 
+        INSERT_NETWORK_COMPACT_CONFIGURATION("INSERT INTO `%table_prefix%NetworkCompactConfigurations` " +
+                "(NetworkId, ConfigId, Enabled, ItemData, Quantity, Action, Operand) VALUES (?, ?, ?, ?, ?, ?, ?) " +
+                "ON DUPLICATE KEY UPDATE Enabled = VALUES(Enabled), ItemData = VALUES(ItemData), " +
+                "Quantity = VALUES(Quantity), Action = VALUES(Action), Operand = VALUES(Operand);"),
+
+        DELETE_NETWORK_COMPACT_CONFIGURATIONS("DELETE FROM `%table_prefix%NetworkCompactConfigurations` WHERE NetworkId = ?;"),
+
+        GET_NETWORK_COMPACT_CONFIGURATIONS("SELECT * FROM `%table_prefix%NetworkCompactConfigurations` WHERE NetworkId = ?;"),
+
         INSERT_NETWORK_LINKED_CHEST("INSERT INTO `%table_prefix%NetworkLinkedChests` (NetworkId, World, X, Y, Z) VALUES (?, ?, ?, ?, ?) " +
                 "ON DUPLICATE KEY UPDATE World = VALUES(World);"),
 
         DELETE_NETWORK_LINKED_CHESTS("DELETE FROM `%table_prefix%NetworkLinkedChests` WHERE NetworkId = ?;"),
 
         GET_NETWORK_LINKED_CHESTS("SELECT * FROM `%table_prefix%NetworkLinkedChests` WHERE NetworkId = ?;"),
+
+        INSERT_NETWORK_LINKED_HOPPER("INSERT INTO `%table_prefix%NetworkLinkedHoppers` (NetworkId, World, X, Y, Z, Role) VALUES (?, ?, ?, ?, ?, ?) " +
+                "ON DUPLICATE KEY UPDATE World = VALUES(World), Role = VALUES(Role);"),
+
+        DELETE_NETWORK_LINKED_HOPPERS("DELETE FROM `%table_prefix%NetworkLinkedHoppers` WHERE NetworkId = ?;"),
+
+        GET_NETWORK_LINKED_HOPPERS("SELECT * FROM `%table_prefix%NetworkLinkedHoppers` WHERE NetworkId = ?;"),
+
+        INSERT_PLAYER_PREFERENCE("INSERT INTO `%table_prefix%PlayerPreferences` (PlayerUuid, MagnetToNetwork) VALUES (?, ?) " +
+                "ON DUPLICATE KEY UPDATE MagnetToNetwork = VALUES(MagnetToNetwork);"),
+
+        GET_PLAYER_PREFERENCES("SELECT * FROM `%table_prefix%PlayerPreferences`;"),
         ;
 
         private final String statement;
@@ -174,6 +224,18 @@ public final class Statements {
                 "FOREIGN KEY (NetworkId) REFERENCES `%table_prefix%Networks`(Identifier) ON DELETE CASCADE " +
                 ");; " +
 
+                "CREATE TABLE IF NOT EXISTS `%table_prefix%NetworkCompactConfigurations` ( " +
+                "NetworkId TEXT NOT NULL, " +
+                "ConfigId TEXT NOT NULL, " +
+                "Enabled INTEGER NOT NULL DEFAULT 1, " +
+                "ItemData TEXT DEFAULT NULL, " +
+                "Quantity INTEGER NOT NULL DEFAULT 9, " +
+                "Action TEXT NOT NULL, " +
+                "Operand TEXT NOT NULL, " +
+                "PRIMARY KEY (NetworkId, ConfigId), " +
+                "FOREIGN KEY (NetworkId) REFERENCES `%table_prefix%Networks`(Identifier) ON DELETE CASCADE " +
+                ");; " +
+
                 "CREATE TABLE IF NOT EXISTS `%table_prefix%NetworkLinkedChests` ( " +
                 "NetworkId TEXT NOT NULL, " +
                 "World TEXT NOT NULL, " +
@@ -182,6 +244,23 @@ public final class Statements {
                 "Z INTEGER NOT NULL, " +
                 "PRIMARY KEY (NetworkId, World, X, Y, Z), " +
                 "FOREIGN KEY (NetworkId) REFERENCES `%table_prefix%Networks`(Identifier) ON DELETE CASCADE " +
+                ");; " +
+
+                "CREATE TABLE IF NOT EXISTS `%table_prefix%NetworkLinkedHoppers` ( " +
+                "NetworkId TEXT NOT NULL, " +
+                "World TEXT NOT NULL, " +
+                "X INTEGER NOT NULL, " +
+                "Y INTEGER NOT NULL, " +
+                "Z INTEGER NOT NULL, " +
+                "Role TEXT NOT NULL, " +
+                "PRIMARY KEY (NetworkId, World, X, Y, Z), " +
+                "FOREIGN KEY (NetworkId) REFERENCES `%table_prefix%Networks`(Identifier) ON DELETE CASCADE " +
+                ");; " +
+
+                "CREATE TABLE IF NOT EXISTS `%table_prefix%PlayerPreferences` ( " +
+                "PlayerUuid TEXT NOT NULL, " +
+                "MagnetToNetwork INTEGER NOT NULL DEFAULT 0, " +
+                "PRIMARY KEY (PlayerUuid) " +
                 ");; "
         ),
 
@@ -218,11 +297,28 @@ public final class Statements {
 
         GET_NETWORK_AUGMENTS("SELECT * FROM `%table_prefix%NetworkAugments` WHERE NetworkId = ?;"),
 
+        INSERT_NETWORK_COMPACT_CONFIGURATION("INSERT OR REPLACE INTO `%table_prefix%NetworkCompactConfigurations` " +
+                "(NetworkId, ConfigId, Enabled, ItemData, Quantity, Action, Operand) VALUES (?, ?, ?, ?, ?, ?, ?);"),
+
+        DELETE_NETWORK_COMPACT_CONFIGURATIONS("DELETE FROM `%table_prefix%NetworkCompactConfigurations` WHERE NetworkId = ?;"),
+
+        GET_NETWORK_COMPACT_CONFIGURATIONS("SELECT * FROM `%table_prefix%NetworkCompactConfigurations` WHERE NetworkId = ?;"),
+
         INSERT_NETWORK_LINKED_CHEST("INSERT OR REPLACE INTO `%table_prefix%NetworkLinkedChests` (NetworkId, World, X, Y, Z) VALUES (?, ?, ?, ?, ?);"),
 
         DELETE_NETWORK_LINKED_CHESTS("DELETE FROM `%table_prefix%NetworkLinkedChests` WHERE NetworkId = ?;"),
 
         GET_NETWORK_LINKED_CHESTS("SELECT * FROM `%table_prefix%NetworkLinkedChests` WHERE NetworkId = ?;"),
+
+        INSERT_NETWORK_LINKED_HOPPER("INSERT OR REPLACE INTO `%table_prefix%NetworkLinkedHoppers` (NetworkId, World, X, Y, Z, Role) VALUES (?, ?, ?, ?, ?, ?);"),
+
+        DELETE_NETWORK_LINKED_HOPPERS("DELETE FROM `%table_prefix%NetworkLinkedHoppers` WHERE NetworkId = ?;"),
+
+        GET_NETWORK_LINKED_HOPPERS("SELECT * FROM `%table_prefix%NetworkLinkedHoppers` WHERE NetworkId = ?;"),
+
+        INSERT_PLAYER_PREFERENCE("INSERT OR REPLACE INTO `%table_prefix%PlayerPreferences` (PlayerUuid, MagnetToNetwork) VALUES (?, ?);"),
+
+        GET_PLAYER_PREFERENCES("SELECT * FROM `%table_prefix%PlayerPreferences`;"),
         ;
 
         private final String statement;
@@ -251,9 +347,17 @@ public final class Statements {
         INSERT_NETWORK_AUGMENT,
         DELETE_NETWORK_AUGMENTS,
         GET_NETWORK_AUGMENTS,
+        INSERT_NETWORK_COMPACT_CONFIGURATION,
+        DELETE_NETWORK_COMPACT_CONFIGURATIONS,
+        GET_NETWORK_COMPACT_CONFIGURATIONS,
         INSERT_NETWORK_LINKED_CHEST,
         DELETE_NETWORK_LINKED_CHESTS,
         GET_NETWORK_LINKED_CHESTS,
+        INSERT_NETWORK_LINKED_HOPPER,
+        DELETE_NETWORK_LINKED_HOPPERS,
+        GET_NETWORK_LINKED_HOPPERS,
+        INSERT_PLAYER_PREFERENCE,
+        GET_PLAYER_PREFERENCES,
     }
 
     public static String getStatement(StatementType type, ConnectorSet connectorSet) {

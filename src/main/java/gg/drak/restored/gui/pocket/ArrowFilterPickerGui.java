@@ -13,7 +13,6 @@ import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.inventory.ItemStack;
 
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -27,12 +26,24 @@ public class ArrowFilterPickerGui extends AbstractInventoryGui implements Pocket
     private final UUID linkId;
     private final Map<Integer, StoredStack> entries = new HashMap<>();
     private int page;
+    private String searchFilter;
+    private gg.drak.restored.gui.NetworkBrowserPrefs.FilterMode filterMode;
+    private gg.drak.restored.gui.NetworkBrowserPrefs.SortMode sortMode;
+    private gg.drak.restored.gui.NetworkBrowserPrefs.SortDirection sortDirection;
+    private boolean combineStacks;
 
     public ArrowFilterPickerGui(Player player, Network network, UUID linkId, Consumer<ItemStack> onPicked) {
         super(player, CornerColor.YELLOW);
         this.network = network;
         this.linkId = linkId;
         this.onPicked = onPicked;
+        gg.drak.restored.gui.NetworkBrowserPrefs.State prefs =
+                gg.drak.restored.gui.NetworkBrowserPrefs.get(player.getUniqueId());
+        this.searchFilter = prefs.searchFilter();
+        this.filterMode = prefs.filterMode();
+        this.sortMode = prefs.sortMode();
+        this.sortDirection = prefs.sortDirection();
+        this.combineStacks = prefs.combineStacks();
     }
 
     @Override
@@ -55,7 +66,21 @@ public class ArrowFilterPickerGui extends AbstractInventoryGui implements Pocket
                 arrows.add(stored);
             }
         }
-        arrows.sort(Comparator.comparing(s -> StoredStack.itemKey(s.getTemplate())));
+        List<StoredStack> sorted = gg.drak.restored.gui.NetworkItemSearchControls
+                .filterAndSort(arrows, state());
+        if (!combineStacks) {
+            arrows = new ArrayList<>();
+            for (StoredStack stored : sorted) {
+                long remaining = stored.getAmount();
+                while (remaining > 0) {
+                    long shown = Math.min(64, remaining);
+                    arrows.add(new StoredStack(stored.getTemplate(), shown));
+                    remaining -= shown;
+                }
+            }
+        } else {
+            arrows = sorted;
+        }
         int perPage = perPage(GuiLayout.SIZE_LARGE);
         int totalPages = Math.max(1, (int) Math.ceil(arrows.size() / (double) perPage));
         page = Math.min(page, totalPages - 1);
@@ -69,6 +94,7 @@ public class ArrowFilterPickerGui extends AbstractInventoryGui implements Pocket
             bindSlot(rawSlot, "item");
         }
         placeReturnButton(contents, "back");
+        gg.drak.restored.gui.NetworkItemSearchControls.place(this, contents, state());
         int back = resolveBackSlot(contents.length);
         if (page > 0) {
             contents[GuiLayout.pagePrevSlot(back)] = GuiItems.pagePreviousButton(page);
@@ -81,6 +107,15 @@ public class ArrowFilterPickerGui extends AbstractInventoryGui implements Pocket
         finishAndOpen(contents);
     }
 
+    private gg.drak.restored.gui.NetworkBrowserPrefs.State state() {
+        return new gg.drak.restored.gui.NetworkBrowserPrefs.State(
+                searchFilter, filterMode, sortMode, sortDirection, combineStacks);
+    }
+
+    private void savePrefs() {
+        gg.drak.restored.gui.NetworkBrowserPrefs.set(player.getUniqueId(), state());
+    }
+
     @Override
     public void handleClick(InventoryClickEvent event) {
         event.setCancelled(true);
@@ -89,7 +124,44 @@ public class ArrowFilterPickerGui extends AbstractInventoryGui implements Pocket
         }
         String key = getKeyAtSlot(event.getRawSlot());
         if ("back".equals(key)) {
+            savePrefs();
             onPicked.accept(null);
+        } else if ("search".equals(key)) {
+            if (event.isShiftClick()) {
+                searchFilter = "";
+                page = 0;
+                savePrefs();
+                render();
+            } else {
+                gg.drak.restored.gui.NetworkItemSearchPrompt.open(player, result -> {
+                    if (result != null) {
+                        searchFilter = result;
+                        page = 0;
+                        savePrefs();
+                    }
+                    open();
+                });
+            }
+        } else if ("filter_mode".equals(key)) {
+            filterMode = filterMode.next();
+            page = 0;
+            savePrefs();
+            render();
+        } else if ("sort_mode".equals(key)) {
+            sortMode = sortMode.next();
+            page = 0;
+            savePrefs();
+            render();
+        } else if ("sort_dir".equals(key)) {
+            sortDirection = sortDirection.toggle();
+            page = 0;
+            savePrefs();
+            render();
+        } else if ("combine".equals(key)) {
+            combineStacks = !combineStacks;
+            page = 0;
+            savePrefs();
+            render();
         } else if ("prev".equals(key)) {
             page = Math.max(0, page - 1);
             render();

@@ -12,6 +12,15 @@ public final class NetworkAugmentItem {
         if (type == null) {
             throw new IllegalArgumentException("type");
         }
+        if (type == AugmentType.COMPACTOR) {
+            return RestoredItems.tagged(
+                    type.getWorkstationMaterial(),
+                    type.itemTypeTag(),
+                    "#FFED6A&l" + type.getDisplayName() + " Augment",
+                    "#bdc8c9Install in a network's Augments GUI.",
+                    "#AAAAAAAutomatically compacts configured network items."
+            );
+        }
         return RestoredItems.tagged(
                 type.getWorkstationMaterial(),
                 type.itemTypeTag(),

@@ -2,10 +2,14 @@ package gg.drak.restored.database;
 
 import gg.drak.restored.Restored;
 import gg.drak.restored.data.Network;
+import gg.drak.restored.data.NetworkHopperRole;
 import gg.drak.restored.database.dao.NetworkAugmentDAO;
+import gg.drak.restored.database.dao.NetworkCompactConfigurationDAO;
 import gg.drak.restored.database.dao.NetworkDAO;
 import gg.drak.restored.database.dao.NetworkItemDAO;
 import gg.drak.restored.database.dao.NetworkLinkedChestDAO;
+import gg.drak.restored.database.dao.NetworkLinkedHopperDAO;
+import gg.drak.restored.database.dao.PlayerPreferenceDAO;
 import gg.drak.restored.database.dao.NetworkOpenStatsDAO;
 import gg.drak.restored.database.dao.NetworkPermissionDAO;
 import gg.drak.restored.util.LinkedChestStorage;
@@ -25,7 +29,10 @@ public class MainOperator extends DBOperator {
     private final NetworkPermissionDAO networkPermissionDAO;
     private final NetworkOpenStatsDAO networkOpenStatsDAO;
     private final NetworkAugmentDAO networkAugmentDAO;
+    private final NetworkCompactConfigurationDAO networkCompactConfigurationDAO;
     private final NetworkLinkedChestDAO networkLinkedChestDAO;
+    private final NetworkLinkedHopperDAO networkLinkedHopperDAO;
+    private final PlayerPreferenceDAO playerPreferenceDAO;
     private final DatabaseMiddleware middleware;
 
     public MainOperator() {
@@ -36,7 +43,10 @@ public class MainOperator extends DBOperator {
         this.networkPermissionDAO = new NetworkPermissionDAO(this);
         this.networkOpenStatsDAO = new NetworkOpenStatsDAO(this);
         this.networkAugmentDAO = new NetworkAugmentDAO(this);
+        this.networkCompactConfigurationDAO = new NetworkCompactConfigurationDAO(this);
         this.networkLinkedChestDAO = new NetworkLinkedChestDAO(this);
+        this.networkLinkedHopperDAO = new NetworkLinkedHopperDAO(this);
+        this.playerPreferenceDAO = new PlayerPreferenceDAO(this);
     }
 
     @Override
@@ -94,6 +104,27 @@ public class MainOperator extends DBOperator {
                         gg.drak.restored.data.NetworkManager.locationKey(row.getWorld(), row.getX(), row.getY(), row.getZ())
                 );
                 if (location != null && location.getWorld() != null) {
+                    NetworkBlockTags.setLinkedNetworkId(location.getBlock(), network.getIdentifier());
+                }
+            }
+
+            for (var configuration : networkCompactConfigurationDAO.getByNetworkId(data.getIdentifier())) {
+                network.loadCompactConfiguration(configuration);
+            }
+
+            for (NetworkLinkedHopperDAO.LinkedHopperRow row : networkLinkedHopperDAO.getByNetworkId(data.getIdentifier())) {
+                NetworkHopperRole role = NetworkHopperRole.fromId(row.getRole());
+                if (role == null) {
+                    Restored.getInstance().logWarning("Skipping linked hopper with unknown role '"
+                            + row.getRole() + "' for network " + data.getIdentifier());
+                    continue;
+                }
+                network.loadLinkedHopper(row.getWorld(), row.getX(), row.getY(), row.getZ(), role);
+                Location location = LinkedChestStorage.parseLocationKey(
+                        gg.drak.restored.data.NetworkManager.locationKey(row.getWorld(), row.getX(), row.getY(), row.getZ())
+                );
+                if (location != null && location.getWorld() != null) {
+                    NetworkBlockTags.setHopperRole(location.getBlock(), role.id());
                     NetworkBlockTags.setLinkedNetworkId(location.getBlock(), network.getIdentifier());
                 }
             }
@@ -168,6 +199,11 @@ public class MainOperator extends DBOperator {
                             ? snapshot.getEnchantingBookshelves() : 0);
         }
 
+        networkCompactConfigurationDAO.deleteAll(snapshot.getIdentifier());
+        for (var configuration : snapshot.getCompactConfigurations()) {
+            networkCompactConfigurationDAO.save(snapshot.getIdentifier(), configuration);
+        }
+
         networkLinkedChestDAO.deleteAll(snapshot.getIdentifier());
         for (NetworkSnapshot.LinkedChestEntry entry : snapshot.getLinkedChests()) {
             networkLinkedChestDAO.save(
@@ -176,6 +212,13 @@ public class MainOperator extends DBOperator {
                     entry.getX(),
                     entry.getY(),
                     entry.getZ()
+            );
+        }
+
+        networkLinkedHopperDAO.deleteAll(snapshot.getIdentifier());
+        for (NetworkSnapshot.LinkedHopperEntry entry : snapshot.getLinkedHoppers()) {
+            networkLinkedHopperDAO.save(
+                    snapshot.getIdentifier(), entry.getWorld(), entry.getX(), entry.getY(), entry.getZ(), entry.getRole()
             );
         }
     }

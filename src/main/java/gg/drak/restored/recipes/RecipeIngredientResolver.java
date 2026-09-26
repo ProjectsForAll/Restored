@@ -8,10 +8,13 @@ import gg.drak.restored.items.ChestLinkingToolItem;
 import gg.drak.restored.items.FeedingAugmentItem;
 import gg.drak.restored.items.BackpackAugmentItem;
 import gg.drak.restored.items.QuiverAugmentItem;
+import gg.drak.restored.items.RocketDistributerAugmentItem;
 import gg.drak.restored.items.NetworkAugmentItem;
 import gg.drak.restored.items.NetworkChestItem;
 import gg.drak.restored.items.NetworkComponentItem;
 import gg.drak.restored.items.NetworkCoreItem;
+import gg.drak.restored.items.MagnetCoreItem;
+import gg.drak.restored.items.NetworkHopperItem;
 import gg.drak.restored.items.NetworkUpgradeItem;
 import gg.drak.restored.items.PocketAugmentItem;
 import gg.drak.restored.items.PocketLinkItem;
@@ -43,6 +46,10 @@ public final class RecipeIngredientResolver {
         return switch (lower) {
             case "network_core", "core" -> NetworkCoreItem.create();
             case "network_chest" -> NetworkChestItem.create();
+            case "network_hopper_input", "hopper_input" -> NetworkHopperItem.create(gg.drak.restored.data.NetworkHopperRole.INPUT);
+            case "network_hopper_output", "hopper_output" -> NetworkHopperItem.create(gg.drak.restored.data.NetworkHopperRole.OUTPUT);
+            case "magnet_core" -> MagnetCoreItem.create();
+            case "magnet_pocket_augment" -> gg.drak.restored.items.MagnetPocketAugmentItem.create();
             case "network_component", "component" -> NetworkComponentItem.create();
             case "network_upgrade", "upgrade" -> NetworkUpgradeItem.create();
             case "augment_component" -> AugmentComponentItem.create();
@@ -50,6 +57,9 @@ public final class RecipeIngredientResolver {
             case "pocket_augment" -> PocketAugmentItem.create();
             case "feeding_augment", "pocket_augment_feeding" -> FeedingAugmentItem.create();
             case "quiver_augment", "pocket_augment_quiver" -> QuiverAugmentItem.create();
+            case "rocket_distributer", "rocket_distributor", "rocket_distributer_augment", "rocket_distributor_augment",
+                 "pocket_augment_rocket_distributer", "pocket_augment_rocket_distributor" -> RocketDistributerAugmentItem.create();
+            case "compactor_augment" -> NetworkAugmentItem.create(AugmentType.COMPACTOR);
             case "backpack_augment", "pocket_augment_backpack" -> BackpackAugmentItem.create();
             case "chest_linking_tool", "linking_tool" -> ChestLinkingToolItem.create();
             default -> {
@@ -65,7 +75,9 @@ public final class RecipeIngredientResolver {
                     yield switch (pocketType) {
                         case FEEDING -> FeedingAugmentItem.create();
                         case QUIVER -> QuiverAugmentItem.create();
+                        case ROCKET_DISTRIBUTER -> RocketDistributerAugmentItem.create();
                         case BACKPACK -> BackpackAugmentItem.create();
+                        case MAGNET -> gg.drak.restored.items.MagnetPocketAugmentItem.create();
                     };
                 }
                 yield resolveExternalOrVanilla(key);
@@ -113,10 +125,18 @@ public final class RecipeIngredientResolver {
         String lower = id.trim().toLowerCase(Locale.ROOT);
         if (lower.startsWith("network_") || lower.equals("core")
                 || lower.equals("component") || lower.equals("upgrade")
+                || lower.equals("magnet_core")
+                || lower.equals("magnet_pocket_augment")
+                || lower.equals("network_hopper_input") || lower.equals("hopper_input")
+                || lower.equals("network_hopper_output") || lower.equals("hopper_output")
                 || lower.equals("augment_component") || lower.startsWith("augment_")
                 || lower.equals("pocket_link") || lower.equals("pocket_augment")
                 || lower.equals("feeding_augment") || lower.equals("quiver_augment")
                 || lower.equals("backpack_augment") || lower.startsWith("pocket_augment_")
+                || lower.equals("rocket_distributer") || lower.equals("rocket_distributor")
+                || lower.equals("rocket_distributer_augment") || lower.equals("rocket_distributor_augment")
+                || lower.equals("pocket_augment_rocket_distributer") || lower.equals("pocket_augment_rocket_distributor")
+                || lower.equals("compactor_augment")
                 || lower.equals("chest_linking_tool") || lower.equals("linking_tool")) {
             return true;
         }
@@ -136,6 +156,11 @@ public final class RecipeIngredientResolver {
             case "component" -> "network_component";
             case "upgrade" -> "network_upgrade";
             case "pocket_augment_feeding" -> "feeding_augment";
+            case "pocket_augment_magnet" -> "magnet_pocket_augment";
+            case "rocket_distributor_augment" -> "rocket_distributer_augment";
+            case "rocket_distributor", "pocket_augment_rocket_distributor" -> "rocket_distributer";
+            case "hopper_input" -> "network_hopper_input";
+            case "hopper_output" -> "network_hopper_output";
             case "linking_tool" -> "chest_linking_tool";
             default -> lower;
         };

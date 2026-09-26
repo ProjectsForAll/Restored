@@ -8,6 +8,7 @@ import gg.drak.restored.data.Network;
 import gg.drak.restored.gui.AbstractInventoryGui;
 import gg.drak.restored.gui.GuiItems;
 import gg.drak.restored.gui.NetworkItemsGui;
+import gg.drak.restored.gui.compactor.CompactingConfigsGui;
 import gg.drak.restored.items.NetworkAugmentItem;
 import gg.drak.restored.util.LegacyColors;
 import org.bukkit.Material;
@@ -86,7 +87,9 @@ public class AugmentsListGui extends AbstractInventoryGui {
                     type.getWorkstationMaterial(),
                     "#FFED6A&l" + type.getDisplayName(),
                     List.of(
-                            "#bdc8c9Workstation augment slot.",
+                            type == AugmentType.COMPACTOR
+                                    ? "#bdc8c9Network augment slot."
+                                    : "#bdc8c9Workstation augment slot.",
                             installed ? "#00FC88Installed" : "#FF5555Not installed"
                     )
             );
@@ -96,7 +99,9 @@ public class AugmentsListGui extends AbstractInventoryGui {
                 contents[openSlot] = GuiItems.button(
                         Material.LIME_STAINED_GLASS_PANE,
                         "#00FC88&lOpen " + type.getDisplayName(),
-                        List.of("#bdc8c9Click to open this workstation.")
+                        List.of(type == AugmentType.COMPACTOR
+                                ? "#bdc8c9Click to manage configurations."
+                                : "#bdc8c9Click to open this workstation.")
                 );
             } else {
                 contents[openSlot] = GuiItems.button(
@@ -188,6 +193,10 @@ public class AugmentsListGui extends AbstractInventoryGui {
             }
             if (type == AugmentType.ENDER_CHEST) {
                 player.openInventory(player.getEnderChest());
+                return;
+            }
+            if (type == AugmentType.COMPACTOR) {
+                new CompactingConfigsGui(player, network).open();
                 return;
             }
             WorkstationGuis.open(player, network, type);

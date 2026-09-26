@@ -3,10 +3,12 @@ package gg.drak.restored.events;
 import gg.drak.restored.Restored;
 import gg.drak.restored.data.Network;
 import gg.drak.restored.data.NetworkManager;
+import gg.drak.restored.data.NetworkHopperRole;
 import gg.drak.restored.items.ChestLinkingToolItem;
 import gg.drak.restored.util.LegacyColors;
 import gg.drak.restored.util.LinkedChestStorage;
 import gg.drak.restored.util.NetworkBlockTags;
+import gg.drak.restored.util.NetworkHopperStorage;
 import org.bukkit.Material;
 import org.bukkit.block.Block;
 import org.bukkit.entity.Player;
@@ -52,7 +54,7 @@ public class ChestLinkingToolListener implements Listener {
         }
 
         Block block = event.getClickedBlock();
-        if (block.getType() != Material.CHEST) {
+        if (!LinkedChestStorage.isSupportedStorage(block) && !NetworkHopperStorage.isHopper(block)) {
             return;
         }
 
@@ -107,9 +109,14 @@ public class ChestLinkingToolListener implements Listener {
             return;
         }
 
-        Block canonical = LinkedChestStorage.canonicalChestBlock(block);
+        if (NetworkHopperStorage.isHopper(block)) {
+            handleNetworkHopperToggle(player, block, network);
+            return;
+        }
+
+        Block canonical = LinkedChestStorage.canonicalStorageBlock(block);
         if (canonical == null) {
-            player.sendMessage(LegacyColors.color("#FF5555Only regular chests can be linked."));
+            player.sendMessage(LegacyColors.color("#FF5555Only chests and barrels can be linked."));
             return;
         }
 
@@ -142,7 +149,7 @@ public class ChestLinkingToolListener implements Listener {
 
         if (!LinkedChestStorage.isWithinLinkRange(network, canonical.getLocation())) {
             player.sendMessage(LegacyColors.color("#FF5555Linked chests must be within "
-                    + LinkedChestStorage.MAX_LINK_DISTANCE + " blocks of the network chest."));
+                    + LinkedChestStorage.getLinkDistanceDescription() + " of the network chest."));
             return;
         }
 
@@ -154,7 +161,33 @@ public class ChestLinkingToolListener implements Listener {
         );
         NetworkBlockTags.setLinkedNetworkId(canonical, network.getIdentifier());
         network.save();
-        player.sendMessage(LegacyColors.color("#00FC88Chest linked as network storage."));
+        player.sendMessage(LegacyColors.color("#00FC88Storage linked as network storage."));
+    }
+
+    private void handleNetworkHopperToggle(Player player, Block block, Network network) {
+        Optional<UUID> existing = NetworkBlockTags.getLinkedNetworkId(block);
+        if (existing.isPresent() && !existing.get().equals(network.getIdentifier())) {
+            player.sendMessage(LegacyColors.color("#FF5555That network hopper is already linked to another network."));
+            return;
+        }
+        String key = NetworkManager.locationKey(block.getLocation());
+        if (network.hasLinkedHopperKey(key)) {
+            network.removeLinkedHopperKey(key);
+            NetworkBlockTags.clearLinkedNetworkId(block);
+            network.save();
+            player.sendMessage(LegacyColors.color("#AAAAAANetwork hopper unlinked."));
+            return;
+        }
+        if (!LinkedChestStorage.isWithinLinkRange(network, block.getLocation())) {
+            player.sendMessage(LegacyColors.color("#FF5555Linked hoppers must be within "
+                    + LinkedChestStorage.getLinkDistanceDescription() + " of the network chest."));
+            return;
+        }
+        NetworkHopperStorage.link(block, network);
+        network.save();
+        NetworkHopperRole role = NetworkHopperStorage.role(block);
+        player.sendMessage(LegacyColors.color("#00FC88Network hopper ("
+                + (role == null ? "unknown" : role.id()) + ") linked."));
     }
 
     private Network resolveNetwork(Block block) {

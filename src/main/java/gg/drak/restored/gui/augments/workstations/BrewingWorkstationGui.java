@@ -6,6 +6,7 @@ import gg.drak.restored.data.Network;
 import gg.drak.restored.gui.GuiItems;
 import gg.drak.restored.gui.augments.AbstractWorkstationGui;
 import gg.drak.restored.util.LegacyColors;
+import gg.drak.restored.util.PotionTypeSupport;
 import org.bukkit.Bukkit;
 import org.bukkit.Material;
 import org.bukkit.entity.Player;
@@ -13,13 +14,11 @@ import org.bukkit.event.inventory.ClickType;
 import org.bukkit.event.inventory.InventoryCloseEvent;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.PotionMeta;
-import org.bukkit.potion.PotionData;
 import org.bukkit.potion.PotionType;
 import org.bukkit.scheduler.BukkitTask;
 
 import java.util.List;
 
-@SuppressWarnings("deprecation")
 public class BrewingWorkstationGui extends AbstractWorkstationGui {
     private static final int BOTTLE_0 = 0;
     private static final int BOTTLE_1 = 1;
@@ -121,7 +120,12 @@ public class BrewingWorkstationGui extends AbstractWorkstationGui {
         }
         brewProgress++;
         if (brewProgress >= BREW_TIME) {
-            applyBrew();
+            if (!applyBrew()) {
+                stopBrew();
+                player.sendMessage(LegacyColors.color("#FF5555Output is full; clear it before brewing."));
+                render();
+                return;
+            }
             remaining--;
             brewProgress = 0;
             if (remaining <= 0) {
@@ -166,16 +170,17 @@ public class BrewingWorkstationGui extends AbstractWorkstationGui {
         return true;
     }
 
-    private void applyBrew() {
+    private boolean applyBrew() {
         ItemStack ingredient = craftSlots.get(INGREDIENT);
         if (ingredient == null) {
-            return;
+            return false;
         }
         Material ing = ingredient.getType();
         PotionType target = transformType(ing);
         if (target == null) {
-            return;
+            return false;
         }
+        int brewed = 0;
         for (int i = 0; i < 3; i++) {
             ItemStack bottle = craftSlots.get(i);
             if (bottle == null || !isBrewableBottle(bottle)) {
@@ -188,37 +193,47 @@ public class BrewingWorkstationGui extends AbstractWorkstationGui {
             } else if (ing == Material.DRAGON_BREATH && bottle.getType() == Material.SPLASH_POTION) {
                 result.setType(Material.LINGERING_POTION);
             } else if (result.getItemMeta() instanceof PotionMeta meta) {
-                PotionData data = meta.getBasePotionData();
-                boolean extended = ing == Material.REDSTONE || data.isExtended();
-                boolean upgraded = ing == Material.GLOWSTONE_DUST || data.isUpgraded();
+                PotionType rawType = meta.hasBasePotionType()
+                        ? meta.getBasePotionType()
+                        : PotionType.WATER;
+                PotionType currentType = PotionTypeSupport.basePotionType(rawType);
+                boolean extended = ing == Material.REDSTONE || rawType.name().startsWith("LONG_");
+                boolean upgraded = ing == Material.GLOWSTONE_DUST || rawType.name().startsWith("STRONG_");
                 if (ing == Material.REDSTONE) {
                     upgraded = false;
                 }
                 if (ing == Material.GLOWSTONE_DUST) {
                     extended = false;
                 }
-                PotionType type = target == PotionType.WATER ? data.getType() : target;
+                PotionType type = target == PotionType.WATER ? currentType : target;
                 if (ing != Material.REDSTONE && ing != Material.GLOWSTONE_DUST
                         && ing != Material.GUNPOWDER && ing != Material.DRAGON_BREATH
                         && ing != Material.FERMENTED_SPIDER_EYE) {
                     type = target;
                 }
                 if (ing == Material.FERMENTED_SPIDER_EYE) {
-                    type = corrupt(data.getType());
+                    type = PotionTypeSupport.corrupt(currentType);
                 }
-                meta.setBasePotionData(new PotionData(type, extended && !upgraded, upgraded && !extended));
+                meta.setBasePotionType(PotionTypeSupport.modifiedPotionType(
+                        type, extended && !upgraded, upgraded && !extended));
                 result.setItemMeta(meta);
             }
             if (!canAcceptResult(result)) {
                 continue;
             }
-            depositResult(result);
+            if (!depositResult(result)) {
+                continue;
+            }
+            brewed++;
             if (bottle.getAmount() <= 1) {
                 craftSlots.remove(i);
             } else {
                 bottle.setAmount(bottle.getAmount() - 1);
                 craftSlots.put(i, bottle);
             }
+        }
+        if (brewed <= 0) {
+            return false;
         }
         if (ingredient.getAmount() <= 1) {
             craftSlots.remove(INGREDIENT);
@@ -228,6 +243,7 @@ public class BrewingWorkstationGui extends AbstractWorkstationGui {
         }
         blazeFuel--;
         network.save();
+        return true;
     }
 
     private static boolean isBrewableBottle(ItemStack stack) {
@@ -252,18 +268,6 @@ public class BrewingWorkstationGui extends AbstractWorkstationGui {
             case PHANTOM_MEMBRANE -> PotionType.SLOW_FALLING;
             case REDSTONE, GLOWSTONE_DUST, GUNPOWDER, DRAGON_BREATH, FERMENTED_SPIDER_EYE -> PotionType.WATER;
             default -> null;
-        };
-    }
-
-    private static PotionType corrupt(PotionType type) {
-        return switch (type) {
-            case NIGHT_VISION -> PotionType.INVISIBILITY;
-            case SWIFTNESS -> PotionType.SLOWNESS;
-            case LEAPING -> PotionType.SLOWNESS;
-            case HEALING -> PotionType.HARMING;
-            case POISON -> PotionType.HARMING;
-            case REGENERATION -> PotionType.WEAKNESS;
-            default -> PotionType.WEAKNESS;
         };
     }
 

@@ -32,6 +32,47 @@ recipes:
       P: PLANKS
       C: network_core
 
+  network_hopper_input:
+    enabled: true
+    type: shaped
+    result: network_hopper_input
+    shape:
+      - "XDX"
+      - "D D"
+      - "XHX"
+    ingredients:
+      X: PLANKS
+      D: DIAMOND
+      H: HOPPER
+
+  network_hopper_output:
+    enabled: true
+    type: shaped
+    result: network_hopper_output
+    shape:
+      - "XHX"
+      - "D D"
+      - "XDX"
+    ingredients:
+      X: PLANKS
+      D: DIAMOND
+      H: HOPPER
+
+  magnet_core:
+    enabled: true
+    type: shaped
+    result: magnet_core
+    shape:
+      - "IDI"
+      - "LQL"
+      - "CDC"
+    ingredients:
+      I: IRON_INGOT
+      D: DIAMOND
+      L: LAPIS_LAZULI
+      Q: QUARTZ
+      C: COPPER_INGOT
+
   network_component:
     enabled: true
     type: shapeless
@@ -189,6 +230,24 @@ recipes:
       - BOW
       - ARROW
 
+  rocket_distributer_augment:
+    enabled: true
+    type: shapeless
+    result: rocket_distributer_augment
+    ingredients:
+      - pocket_augment
+      - FIREWORK_ROCKET
+      - HOPPER
+
+  compactor_augment:
+    enabled: true
+    type: shapeless
+    result: compactor_augment
+    ingredients:
+      - augment_component
+      - DISPENSER
+      - PISTON
+
   backpack_augment:
     enabled: true
     type: shapeless
@@ -196,6 +255,14 @@ recipes:
     ingredients:
       - pocket_augment
       - CHEST
+
+  magnet_pocket_augment:
+    enabled: true
+    type: shapeless
+    result: pocket_augment_magnet
+    ingredients:
+      - pocket_augment
+      - magnet_core
 
   augment_enderchest:
     enabled: true

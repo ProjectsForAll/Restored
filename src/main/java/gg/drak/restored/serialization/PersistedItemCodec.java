@@ -37,6 +37,20 @@ public final class PersistedItemCodec {
     }
 
     /**
+     * True when {@code stack} cannot possibly have {@code itemKey}, decided without hashing.
+     * <p>
+     * {@link #itemKey} costs a clone, a full component serialization and a SHA-256 digest. Scans
+     * that look for one specific key used to pay that on every slot of every linked chest merely
+     * to reject it. Material is part of the serialized form, so a Material mismatch is a
+     * guaranteed key mismatch: this rejects almost every slot for free, and the digest is then
+     * computed only to confirm the few survivors. Identity is unchanged — this never decides a
+     * match, only a non-match.
+     */
+    public static boolean cannotMatch(ItemStack stack, Material keyMaterial) {
+        return keyMaterial != null && stack != null && stack.getType() != keyMaterial;
+    }
+
+    /**
      * Stable identity for stacking: SHA-256 of Paper bytes with amount forced to 1.
      */
     public static String itemKey(ItemStack stack) {

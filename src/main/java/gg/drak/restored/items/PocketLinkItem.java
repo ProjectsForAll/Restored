@@ -4,6 +4,7 @@ import gg.drak.restored.Restored;
 import gg.drak.restored.data.PocketAugmentType;
 import gg.drak.restored.serialization.PersistedItemCodec;
 import gg.drak.restored.util.LegacyColors;
+import gg.drak.restored.util.UuidUtils;
 import host.plas.bou.items.ItemUtils;
 import org.bukkit.Material;
 import org.bukkit.NamespacedKey;
@@ -31,7 +32,15 @@ public final class PocketLinkItem {
     public static final String TAG_QUIVER_MODE = "restored-quiver-mode";
     public static final String TAG_QUIVER_META = "restored-quiver-meta";
     public static final String TAG_QUIVER_FILTERS = "restored-quiver-filters";
+    public static final String TAG_ROCKET_ENABLED = "restored-rocket-distributer-enabled";
+    public static final String TAG_ROCKET_MODE = "restored-rocket-distributer-mode";
+    public static final String TAG_ROCKET_META = "restored-rocket-distributer-meta";
+    public static final String TAG_ROCKET_FILTERS = "restored-rocket-distributer-filters";
+    public static final String TAG_ROCKET_KEEP_AMOUNT = "restored-rocket-distributer-keep-amount";
     public static final String TAG_BACKPACK_CONTENTS = "restored-backpack-contents";
+    public static final String TAG_MAGNET_ENABLED = "restored-magnet-enabled";
+    public static final String TAG_MAGNET_TO_NETWORK = "restored-magnet-to-network";
+    public static final String TAG_MAGNET_ONLY_IF_INVENTORY_FULL = "restored-magnet-only-if-inventory-full";
     public static final String TAG_OPEN_LINK_ID = "restored-open-pocket-link-id";
 
     private static final String FILTER_SEP = "\u0002";
@@ -108,6 +117,13 @@ public final class PocketLinkItem {
         setFeedSortMode(item, FeedSortMode.SLOT);
         setFeedSortDir(item, FeedSortDir.DESCENDING);
         setFeedMetaMode(item, FeedMetaMode.RESPECT);
+        setRocketEnabled(item, true);
+        setRocketFilterMode(item, FeedFilterMode.BLACKLIST);
+        setRocketMetaMode(item, FeedMetaMode.RESPECT);
+        setRocketKeepAmount(item, 64);
+        setMagnetEnabled(item, true);
+        setMagnetToNetwork(item, false);
+        setMagnetOnlyIfInventoryFull(item, false);
         return item;
     }
 
@@ -118,9 +134,13 @@ public final class PocketLinkItem {
     public static UUID ensureLinkId(ItemStack stack) {
         Optional<String> existing = ItemUtils.getTag(stack, Restored.getInstance(), TAG_LINK_ID);
         if (existing.isPresent() && !existing.get().isBlank()) {
-            UUID id = UUID.fromString(existing.get());
-            setPdcString(stack, TAG_LINK_ID, id.toString());
-            return id;
+            try {
+                UUID id = UUID.fromString(existing.get());
+                setPdcString(stack, TAG_LINK_ID, id.toString());
+                return id;
+            } catch (IllegalArgumentException ignored) {
+                // Repair malformed legacy/corrupted metadata below.
+            }
         }
         UUID id = UUID.randomUUID();
         ItemUtils.setTag(stack, Restored.getInstance(), TAG_LINK_ID, id.toString());
@@ -130,22 +150,13 @@ public final class PocketLinkItem {
 
     public static Optional<UUID> getLinkId(ItemStack stack) {
         Optional<String> pdc = getPdcString(stack, TAG_LINK_ID);
-        return (pdc.isPresent() ? pdc : ItemUtils.getTag(stack, Restored.getInstance(), TAG_LINK_ID))
-                .filter(s -> !s.isBlank())
-                .map(UUID::fromString);
+        Optional<String> raw = pdc.isPresent() ? pdc : ItemUtils.getTag(stack, Restored.getInstance(), TAG_LINK_ID);
+        return raw.flatMap(UuidUtils::parse);
     }
 
     /** Reads the link id through this plugin's PDC key for GUI movement protection. */
     public static Optional<UUID> getNamespacedLinkId(ItemStack stack) {
-        return getPdcString(stack, TAG_LINK_ID)
-                .filter(s -> !s.isBlank())
-                .map(value -> {
-                    try {
-                        return UUID.fromString(value);
-                    } catch (IllegalArgumentException ignored) {
-                        return null;
-                    }
-                });
+        return getPdcString(stack, TAG_LINK_ID).flatMap(UuidUtils::parse);
     }
 
     public static void markGuiOpen(Player player, UUID linkId) {
@@ -162,11 +173,7 @@ public final class PocketLinkItem {
         if (value == null || value.isBlank()) {
             return Optional.empty();
         }
-        try {
-            return Optional.of(UUID.fromString(value));
-        } catch (IllegalArgumentException ignored) {
-            return Optional.empty();
-        }
+        return UuidUtils.parse(value);
     }
 
     public static boolean isOpenGuiLink(Player player, ItemStack stack) {
@@ -221,7 +228,8 @@ public final class PocketLinkItem {
     }
 
     public static boolean installAugment(ItemStack stack, PocketAugmentType type) {
-        Set<PocketAugmentType> set = EnumSet.copyOf(getInstalledAugments(stack));
+        EnumSet<PocketAugmentType> set = EnumSet.noneOf(PocketAugmentType.class);
+        set.addAll(getInstalledAugments(stack));
         if (!set.add(type)) {
             return false;
         }
@@ -230,7 +238,8 @@ public final class PocketLinkItem {
     }
 
     public static boolean uninstallAugment(ItemStack stack, PocketAugmentType type) {
-        Set<PocketAugmentType> set = EnumSet.copyOf(getInstalledAugments(stack));
+        EnumSet<PocketAugmentType> set = EnumSet.noneOf(PocketAugmentType.class);
+        set.addAll(getInstalledAugments(stack));
         if (!set.remove(type)) {
             return false;
         }
@@ -332,6 +341,104 @@ public final class PocketLinkItem {
 
     public static void setQuiverMetaMode(ItemStack stack, FeedMetaMode mode) {
         ItemUtils.setTag(stack, Restored.getInstance(), TAG_QUIVER_META, mode.name());
+    }
+
+    public static boolean isRocketEnabled(ItemStack stack) {
+        return getBoolean(stack, TAG_ROCKET_ENABLED, true);
+    }
+
+    public static void setRocketEnabled(ItemStack stack, boolean enabled) {
+        setBoolean(stack, TAG_ROCKET_ENABLED, enabled);
+    }
+
+    public static FeedFilterMode getRocketFilterMode(ItemStack stack) {
+        return parseEnum(ItemUtils.getTag(stack, Restored.getInstance(), TAG_ROCKET_MODE),
+                FeedFilterMode.class, FeedFilterMode.BLACKLIST);
+    }
+
+    public static void setRocketFilterMode(ItemStack stack, FeedFilterMode mode) {
+        setEnumTag(stack, TAG_ROCKET_MODE, mode, FeedFilterMode.BLACKLIST);
+    }
+
+    public static FeedMetaMode getRocketMetaMode(ItemStack stack) {
+        return parseEnum(ItemUtils.getTag(stack, Restored.getInstance(), TAG_ROCKET_META),
+                FeedMetaMode.class, FeedMetaMode.RESPECT);
+    }
+
+    public static void setRocketMetaMode(ItemStack stack, FeedMetaMode mode) {
+        setEnumTag(stack, TAG_ROCKET_META, mode, FeedMetaMode.RESPECT);
+    }
+
+    public static List<ItemStack> getRocketFilters(ItemStack stack) {
+        return getFilters(stack, TAG_ROCKET_FILTERS);
+    }
+
+    public static void setRocketFilters(ItemStack stack, List<ItemStack> filters) {
+        setFilters(stack, TAG_ROCKET_FILTERS, filters);
+    }
+
+    /**
+     * Number of rockets the distributor tries to keep across the selected inventory slots.
+     * Zero is allowed and is useful as a temporary alternative to disabling the augment.
+     */
+    public static long getRocketKeepAmount(ItemStack stack) {
+        return ItemUtils.getTag(stack, Restored.getInstance(), TAG_ROCKET_KEEP_AMOUNT)
+                .map(value -> {
+                    try {
+                        return Math.max(0L, Math.min(2368L, Long.parseLong(value)));
+                    } catch (NumberFormatException ignored) {
+                        return 64L;
+                    }
+                })
+                .orElse(64L);
+    }
+
+    public static void setRocketKeepAmount(ItemStack stack, long amount) {
+        ItemUtils.setTag(stack, Restored.getInstance(), TAG_ROCKET_KEEP_AMOUNT,
+                Long.toString(Math.max(0L, Math.min(2368L, amount))));
+    }
+
+    public static boolean isMagnetEnabled(ItemStack stack) {
+        return getBoolean(stack, TAG_MAGNET_ENABLED, true);
+    }
+
+    public static void setMagnetEnabled(ItemStack stack, boolean enabled) {
+        setBoolean(stack, TAG_MAGNET_ENABLED, enabled);
+    }
+
+    public static boolean isMagnetToNetwork(ItemStack stack) {
+        return getBoolean(stack, TAG_MAGNET_TO_NETWORK, true);
+    }
+
+    public static void setMagnetToNetwork(ItemStack stack, boolean enabled) {
+        setBoolean(stack, TAG_MAGNET_TO_NETWORK, enabled);
+    }
+
+    public static boolean isMagnetOnlyIfInventoryFull(ItemStack stack) {
+        return getBoolean(stack, TAG_MAGNET_ONLY_IF_INVENTORY_FULL, false);
+    }
+
+    public static void setMagnetOnlyIfInventoryFull(ItemStack stack, boolean enabled) {
+        setBoolean(stack, TAG_MAGNET_ONLY_IF_INVENTORY_FULL, enabled);
+    }
+
+    private static boolean getBoolean(ItemStack stack, String key, boolean fallback) {
+        return ItemUtils.getTag(stack, Restored.getInstance(), key)
+                .map(value -> {
+                    if (value == null || value.isBlank()) {
+                        return fallback;
+                    }
+                    return Boolean.parseBoolean(value);
+                })
+                .orElse(fallback);
+    }
+
+    private static void setBoolean(ItemStack stack, String key, boolean value) {
+        ItemUtils.setTag(stack, Restored.getInstance(), key, Boolean.toString(value));
+    }
+
+    private static <T extends Enum<T>> void setEnumTag(ItemStack stack, String key, T value, T fallback) {
+        ItemUtils.setTag(stack, Restored.getInstance(), key, (value == null ? fallback : value).name());
     }
 
     private static List<ItemStack> getFilters(ItemStack stack, String tag) {

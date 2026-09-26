@@ -26,6 +26,12 @@ public final class RestoredItemRegistry {
         keys.add("core");
         keys.add("network_chest");
         keys.add("chest");
+        keys.add("network_hopper_input");
+        keys.add("hopper_input");
+        keys.add("network_hopper_output");
+        keys.add("hopper_output");
+        keys.add("magnet_core");
+        keys.add("magnet_pocket_augment");
         keys.add("network_component");
         keys.add("component");
         keys.add("network_upgrade");
@@ -42,7 +48,15 @@ public final class RestoredItemRegistry {
         keys.add("feeding_augment");
         keys.add("pocket_augment_feeding");
         keys.add("quiver_augment");
+        keys.add("rocket_distributer_augment");
+        keys.add("rocket_distributor_augment");
+        keys.add("rocket_distributer");
+        keys.add("rocket_distributor");
+        keys.add("pocket_augment_rocket_distributer");
+        keys.add("pocket_augment_rocket_distributor");
         keys.add("backpack_augment");
+        keys.add("compactor_augment");
+        keys.add("compactor");
         keys.add("chest_linking_tool");
         keys.add("linking_tool");
         KEYS = Collections.unmodifiableSet(keys);

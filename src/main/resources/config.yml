@@ -1,0 +1,3 @@
+# Maximum distance, in blocks, between a network chest and linked chests/hoppers.
+# Set to -1 to allow linked storage at any distance in the same world.
+linked-chest-max-distance: 64

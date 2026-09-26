@@ -13,6 +13,7 @@ import gg.drak.restored.gui.augments.workstations.LoomWorkstationGui;
 import gg.drak.restored.gui.augments.workstations.SmithingWorkstationGui;
 import gg.drak.restored.gui.augments.workstations.StonecutterWorkstationGui;
 import org.bukkit.entity.Player;
+import gg.drak.restored.gui.compactor.CompactingConfigsGui;
 
 public final class WorkstationGuis {
 
@@ -32,6 +33,7 @@ public final class WorkstationGuis {
             case BREWING -> new BrewingWorkstationGui(player, network).open();
             case ENCHANTING -> new EnchantingWorkstationGui(player, network).open();
             case ENDER_CHEST -> player.openInventory(player.getEnderChest());
+            case COMPACTOR -> new CompactingConfigsGui(player, network).open();
         }
     }
 }

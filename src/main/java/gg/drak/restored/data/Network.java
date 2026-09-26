@@ -3,6 +3,7 @@ package gg.drak.restored.data;
 import gg.drak.restored.Restored;
 import gg.drak.restored.serialization.PersistedItemCodec;
 import gg.drak.restored.util.LinkedChestStorage;
+import gg.drak.restored.util.NetworkHopperStorage;
 import gg.drak.restored.util.NetworkBlockTags;
 import host.plas.bou.gui.items.ItemData;
 import lombok.AccessLevel;
@@ -25,6 +26,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 
 @Getter @Setter
 public class Network {
@@ -46,9 +48,18 @@ public class Network {
     /** Location keys (`world:x:y:z`) of linked vanilla storage chests. */
     @Getter(AccessLevel.NONE)
     private final Set<String> linkedChestKeys = ConcurrentHashMap.newKeySet();
+    /** Location keys of linked input/output network hopper chests. */
+    @Getter(AccessLevel.NONE)
+    private final Set<String> linkedHopperKeys = ConcurrentHashMap.newKeySet();
+    private final ConcurrentHashMap<String, NetworkHopperRole> linkedHopperRoles = new ConcurrentHashMap<>();
     /** Runtime workstation GUI slot state — not DB-persisted. */
     @Getter(AccessLevel.NONE)
     private final ConcurrentHashMap<AugmentType, WorkstationSession> workstationSessions = new ConcurrentHashMap<>();
+    /** Persisted automatic compactor rules. */
+    @Getter(AccessLevel.NONE)
+    private final ConcurrentHashMap<UUID, CompactConfiguration> compactConfigurations = new ConcurrentHashMap<>();
+    /** Virtual-storage item total, maintained alongside the item map for hot capacity checks. */
+    private final AtomicLong totalItems = new AtomicLong();
     private final AtomicBoolean dirty = new AtomicBoolean(false);
 
     public Network(UUID identifier, UUID ownerUuid) {
@@ -72,7 +83,8 @@ public class Network {
         if (!isPlaced()) {
             return null;
         }
-        return new Location(Bukkit.getWorld(world), x, y, z);
+        org.bukkit.World loadedWorld = Bukkit.getWorld(world);
+        return loadedWorld == null ? null : new Location(loadedWorld, x, y, z);
     }
 
     public void setLocation(Location location) {
@@ -95,11 +107,7 @@ public class Network {
     }
 
     public long getTotalItems() {
-        long total = 0;
-        for (StoredStack stack : items.values()) {
-            total += stack.getAmount();
-        }
-        return total;
+        return totalItems.get();
     }
 
     public int getDifferedItemCount() {
@@ -205,6 +213,9 @@ public class Network {
         if (type == AugmentType.ENCHANTING) {
             enchantingBookshelves = 0;
         }
+        if (type == AugmentType.COMPACTOR) {
+            compactConfigurations.clear();
+        }
         markDirty();
         return true;
     }
@@ -223,6 +234,52 @@ public class Network {
     public void loadAugment(AugmentType type) {
         if (type != null) {
             installedAugments.add(type);
+        }
+    }
+
+    public List<CompactConfiguration> getCompactConfigurations() {
+        List<CompactConfiguration> result = new ArrayList<>();
+        for (CompactConfiguration configuration : compactConfigurations.values()) {
+            result.add(configuration);
+        }
+        result.sort(Comparator.comparing(configuration -> configuration.getIdentifier().toString()));
+        return Collections.unmodifiableList(result);
+    }
+
+    /** Alias matching the terminology used by the compactor GUI. */
+    public List<CompactConfiguration> getCompactingConfigurations() {
+        return getCompactConfigurations();
+    }
+
+    public CompactConfiguration getCompactConfiguration(UUID identifier) {
+        return identifier == null ? null : compactConfigurations.get(identifier);
+    }
+
+    public CompactConfiguration createCompactConfiguration() {
+        CompactConfiguration configuration = new CompactConfiguration(UUID.randomUUID());
+        compactConfigurations.put(configuration.getIdentifier(), configuration);
+        markDirty();
+        return configuration;
+    }
+
+    public void loadCompactConfiguration(CompactConfiguration configuration) {
+        if (configuration != null) {
+            compactConfigurations.put(configuration.getIdentifier(), configuration);
+        }
+    }
+
+    public boolean removeCompactConfiguration(UUID identifier) {
+        if (identifier == null || compactConfigurations.remove(identifier) == null) {
+            return false;
+        }
+        markDirty();
+        return true;
+    }
+
+    public void clearCompactConfigurations() {
+        if (!compactConfigurations.isEmpty()) {
+            compactConfigurations.clear();
+            markDirty();
         }
     }
 
@@ -247,6 +304,72 @@ public class Network {
 
     public int getLinkedChestCount() {
         return linkedChestKeys.size();
+    }
+
+    public Set<String> getLinkedHopperKeys() {
+        if (linkedHopperKeys.isEmpty()) {
+            return Set.of();
+        }
+        return Collections.unmodifiableSet(linkedHopperKeys);
+    }
+
+    public int getLinkedHopperCount() {
+        return linkedHopperKeys.size();
+    }
+
+    public boolean hasLinkedHopperKey(String locationKey) {
+        return locationKey != null && linkedHopperKeys.contains(locationKey);
+    }
+
+    public boolean addLinkedHopper(NetworkHopperRole role, String world, int x, int y, int z) {
+        if (role == null || world == null || world.isEmpty()) {
+            return false;
+        }
+        boolean added = linkedHopperKeys.add(NetworkManager.locationKey(world, x, y, z));
+        linkedHopperRoles.put(NetworkManager.locationKey(world, x, y, z), role);
+        if (added) {
+            markDirty();
+        }
+        return added;
+    }
+
+    public void loadLinkedHopper(String world, int x, int y, int z) {
+        loadLinkedHopper(world, x, y, z, null);
+    }
+
+    public void loadLinkedHopper(String world, int x, int y, int z, NetworkHopperRole role) {
+        if (world != null && !world.isEmpty()) {
+            String key = NetworkManager.locationKey(world, x, y, z);
+            linkedHopperKeys.add(key);
+            if (role != null) {
+                linkedHopperRoles.put(key, role);
+            }
+        }
+    }
+
+    public NetworkHopperRole getLinkedHopperRole(String locationKey) {
+        return linkedHopperRoles.get(locationKey);
+    }
+
+    public boolean removeLinkedHopperKey(String locationKey) {
+        if (locationKey == null || locationKey.isBlank()) {
+            return false;
+        }
+        boolean removed = linkedHopperKeys.remove(locationKey);
+        linkedHopperRoles.remove(locationKey);
+        if (removed) {
+            markDirty();
+        }
+        return removed;
+    }
+
+    public void clearLinkedHopperTags() {
+        for (String key : linkedHopperKeys) {
+            Location location = LinkedChestStorage.parseLocationKey(key);
+            if (location != null && location.getWorld() != null) {
+                NetworkBlockTags.clearLinkedNetworkId(location.getBlock());
+            }
+        }
     }
 
     public boolean hasLinkedChestKey(String locationKey) {
@@ -305,6 +428,12 @@ public class Network {
         if (upgradeCount > 0 || enchantingBookshelves > 0 || !installedAugments.isEmpty()) {
             return false;
         }
+        if (NetworkHopperStorage.hasUnresolvedLinks(this) || NetworkHopperStorage.hasStoredItems(this)) {
+            return false;
+        }
+        if (LinkedChestStorage.hasUnresolvedLinks(this) || LinkedChestStorage.countLinkedItems(this) > 0) {
+            return false;
+        }
         for (WorkstationSession session : workstationSessions.values()) {
             if (session != null && !session.isEmpty()) {
                 return false;
@@ -324,10 +453,21 @@ public class Network {
     }
 
     public long insert(ItemStack stack, long amount) {
+        return insert(stack, amount, null);
+    }
+
+    /**
+     * Inserts using a caller-provided linked-inventory snapshot. Periodic processors
+     * pass one snapshot through all operations in a tick to avoid resolving the same
+     * chest locations repeatedly.
+     */
+    public long insert(ItemStack stack, long amount, List<org.bukkit.inventory.Inventory> linkedInventories) {
         if (stack == null || stack.getType().isAir() || amount <= 0) {
             return 0;
         }
-        long linkedInserted = LinkedChestStorage.insertIntoLinked(this, stack, amount);
+        long linkedInserted = linkedInventories == null
+                ? LinkedChestStorage.insertIntoLinked(this, stack, amount)
+                : LinkedChestStorage.insertIntoLinked(linkedInventories, stack, amount);
         long remaining = amount - linkedInserted;
         if (remaining <= 0) {
             return linkedInserted;
@@ -344,6 +484,7 @@ public class Network {
         } else {
             existing.setAmount(existing.getAmount() + toInsert);
         }
+        totalItems.addAndGet(toInsert);
         markDirty();
         return linkedInserted + toInsert;
     }
@@ -360,15 +501,24 @@ public class Network {
         } else {
             existing.setAmount(existing.getAmount() + amount);
         }
+        totalItems.addAndGet(amount);
         markDirty();
         return amount;
     }
 
     public long extract(String itemKey, long amount) {
+        return extract(itemKey, amount, null);
+    }
+
+    /** Extracts using a caller-provided linked-inventory snapshot. */
+    public long extract(String itemKey, long amount, List<org.bukkit.inventory.Inventory> linkedInventories) {
         if (itemKey == null || amount <= 0) {
             return 0;
         }
-        long linkedTaken = LinkedChestStorage.extractFromLinked(this, itemKey, amount);
+        long linkedTaken = linkedInventories == null
+                ? LinkedChestStorage.extractFromLinked(this, itemKey, amount)
+                : LinkedChestStorage.extractFromLinked(
+                        linkedInventories, itemKey, amount, materialOf(itemKey));
         long remaining = amount - linkedTaken;
         if (remaining <= 0) {
             return linkedTaken;
@@ -384,6 +534,7 @@ public class Network {
         } else {
             stack.setAmount(left);
         }
+        totalItems.addAndGet(-taken);
         markDirty();
         return linkedTaken + taken;
     }
@@ -392,12 +543,27 @@ public class Network {
      * Merged view of virtual storage plus live linked-chest contents (by item key).
      */
     public List<StoredStack> getCombinedStacks() {
+        return getCombinedStacks(null);
+    }
+
+    /**
+     * @param accept optional Material test. Periodic augment processors that consume only one
+     *               family of items (arrows, food, rockets) pass it so linked-chest slots they
+     *               would discard are never hashed. Virtual storage is filtered too, so callers
+     *               still see exactly the stacks they would have kept.
+     */
+    public List<StoredStack> getCombinedStacks(java.util.function.Predicate<org.bukkit.Material> accept) {
         Map<String, StoredStack> combined = new java.util.LinkedHashMap<>();
         for (Map.Entry<String, StoredStack> entry : items.entrySet()) {
             StoredStack stack = entry.getValue();
+            if (accept != null && (stack.getTemplate() == null || !accept.test(stack.getTemplate().getType()))) {
+                continue;
+            }
             combined.put(entry.getKey(), new StoredStack(stack.getTemplate(), stack.getAmount()));
         }
-        for (Map.Entry<String, StoredStack> entry : LinkedChestStorage.aggregateLinkedByKey(this).entrySet()) {
+        for (Map.Entry<String, StoredStack> entry
+                : LinkedChestStorage.aggregateLinkedByKey(
+                        LinkedChestStorage.resolveInventories(this), accept).entrySet()) {
             StoredStack linked = entry.getValue();
             StoredStack existing = combined.get(entry.getKey());
             if (existing == null) {
@@ -410,6 +576,11 @@ public class Network {
     }
 
     public long getCombinedAmount(String itemKey) {
+        return getCombinedAmount(itemKey, null);
+    }
+
+    /** Gets a combined amount using a caller-provided linked-inventory snapshot. */
+    public long getCombinedAmount(String itemKey, List<org.bukkit.inventory.Inventory> linkedInventories) {
         if (itemKey == null) {
             return 0;
         }
@@ -418,8 +589,60 @@ public class Network {
         if (virtual != null) {
             total += virtual.getAmount();
         }
-        total += LinkedChestStorage.extractableAmount(this, itemKey);
+        total += linkedInventories == null
+                ? LinkedChestStorage.extractableAmount(this, itemKey)
+                : LinkedChestStorage.extractableAmount(linkedInventories, itemKey, materialOf(itemKey));
         return total;
+    }
+
+    /**
+     * Material behind an item key when virtual storage happens to hold it, else null.
+     * Lets linked-chest scans reject slots on Material instead of hashing every one.
+     */
+    /** Combined amount for one key whose Material the caller already knows. */
+    public long getCombinedAmount(
+            String itemKey, List<org.bukkit.inventory.Inventory> linkedInventories, org.bukkit.Material keyMaterial) {
+        if (itemKey == null) {
+            return 0;
+        }
+        long total = 0;
+        StoredStack virtual = items.get(itemKey);
+        if (virtual != null) {
+            total += virtual.getAmount();
+        }
+        total += LinkedChestStorage.extractableAmount(
+                linkedInventories == null ? LinkedChestStorage.resolveInventories(this) : linkedInventories,
+                itemKey,
+                keyMaterial);
+        return total;
+    }
+
+    private org.bukkit.Material materialOf(String itemKey) {
+        StoredStack stack = itemKey == null ? null : items.get(itemKey);
+        return stack == null || stack.getTemplate() == null ? null : stack.getTemplate().getType();
+    }
+
+    /**
+     * Creates one combined amount map for a linked-inventory snapshot. Periodic
+     * augment processors use this when checking several filters/configurations so
+     * each physical chest is scanned once instead of once per filter.
+     */
+    public Map<String, Long> getCombinedAmounts(List<org.bukkit.inventory.Inventory> linkedInventories) {
+        Map<String, Long> amounts = new java.util.HashMap<>();
+        for (Map.Entry<String, StoredStack> entry : items.entrySet()) {
+            amounts.merge(entry.getKey(), entry.getValue().getAmount(), Long::sum);
+        }
+        List<org.bukkit.inventory.Inventory> inventories = linkedInventories == null
+                ? LinkedChestStorage.resolveInventories(this) : linkedInventories;
+        for (org.bukkit.inventory.Inventory inventory : inventories) {
+            for (ItemStack stack : inventory.getContents()) {
+                if (stack == null || stack.getType().isAir()) {
+                    continue;
+                }
+                amounts.merge(StoredStack.itemKey(stack), (long) stack.getAmount(), Long::sum);
+            }
+        }
+        return amounts;
     }
 
     public ItemStack getCombinedTemplate(String itemKey) {
@@ -503,7 +726,10 @@ public class Network {
      */
     public void delete() {
         clearLinkedChestTags();
+        clearLinkedHopperTags();
         linkedChestKeys.clear();
+        linkedHopperKeys.clear();
+        linkedHopperRoles.clear();
         NetworkManager.unregister(this);
         Restored.getDatabase().getMiddleware().queueNetworkDelete(this);
     }
@@ -518,6 +744,7 @@ public class Network {
         } else {
             items.put(key, new StoredStack(stack, amount));
         }
+        totalItems.addAndGet(amount);
         if (!key.equals(itemKey)) {
             markDirty();
         }

@@ -130,7 +130,6 @@ public class FeedingAugmentListener implements Listener {
                 candidates.remove(0);
                 continue;
             }
-            network.save();
 
             int newFood = Math.min(20, player.getFoodLevel() + values.nutrition());
             player.setFoodLevel(newFood);
@@ -161,7 +160,7 @@ public class FeedingAugmentListener implements Listener {
         PocketLinkItem.FeedSortDir sortDir = PocketLinkItem.getFeedSortDir(link);
 
         List<Candidate> candidates = new ArrayList<>();
-        for (StoredStack stored : network.getCombinedStacks()) {
+        for (StoredStack stored : network.getCombinedStacks(org.bukkit.Material::isEdible)) {
             ItemStack template = stored.getTemplate();
             if (!isConsumableFood(template)) {
                 continue;

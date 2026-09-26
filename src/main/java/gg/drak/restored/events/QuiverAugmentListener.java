@@ -147,7 +147,6 @@ public class QuiverAugmentListener implements Listener {
         if (selection == null || selection.network().extract(selection.itemKey(), 1) <= 0) {
             return;
         }
-        selection.network().save();
 
         ItemStack arrow = selection.template().clone();
         arrow.setAmount(1);
@@ -386,7 +385,10 @@ public class QuiverAugmentListener implements Listener {
         PocketLinkItem.FeedFilterMode mode = PocketLinkItem.getQuiverFilterMode(link);
         PocketLinkItem.FeedMetaMode metaMode = PocketLinkItem.getQuiverMetaMode(link);
 
-        for (StoredStack stored : network.getCombinedStacks()) {
+        for (StoredStack stored : network.getCombinedStacks(m -> switch (m) {
+            case ARROW, SPECTRAL_ARROW, TIPPED_ARROW -> true;
+            default -> false;
+        })) {
             ItemStack template = stored.getTemplate();
             if (!QuiverAugmentGui.isArrow(template)) {
                 continue;

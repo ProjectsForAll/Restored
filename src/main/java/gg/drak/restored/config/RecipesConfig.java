@@ -44,6 +44,18 @@ public class RecipesConfig extends SimpleConfiguration {
                 List.of("PPP", "PCP", "PPP"),
                 Map.of('P', "PLANKS", 'C', "network_core"),
                 List.of()));
+        loaded.add(readRecipe("network_hopper_input", ConfiguredRecipe.Type.SHAPED, "network_hopper_input",
+                List.of("XDX", "D D", "XHX"),
+                Map.of('X', "PLANKS", 'D', "DIAMOND", 'H', "HOPPER"),
+                List.of()));
+        loaded.add(readRecipe("network_hopper_output", ConfiguredRecipe.Type.SHAPED, "network_hopper_output",
+                List.of("XHX", "D D", "XDX"),
+                Map.of('X', "PLANKS", 'D', "DIAMOND", 'H', "HOPPER"),
+                List.of()));
+        loaded.add(readRecipe("magnet_core", ConfiguredRecipe.Type.SHAPED, "magnet_core",
+                List.of("IDI", "LQL", "CDC"),
+                Map.of('I', "IRON_INGOT", 'D', "DIAMOND", 'L', "LAPIS_LAZULI", 'Q', "QUARTZ", 'C', "COPPER_INGOT"),
+                List.of()));
         loaded.add(readRecipe("network_component", ConfiguredRecipe.Type.SHAPELESS, "network_component",
                 List.of(),
                 Map.of(),
@@ -57,10 +69,13 @@ public class RecipesConfig extends SimpleConfiguration {
                 Map.of(),
                 List.of("network_upgrade", "NETHER_QUARTZ")));
         for (AugmentType type : AugmentType.values()) {
-            loaded.add(readRecipe(type.recipeId(), ConfiguredRecipe.Type.SHAPELESS, type.recipeId(),
-                    List.of(),
-                    Map.of(),
-                    List.of("augment_component", type.getWorkstationMaterial().name())));
+            if (type == AugmentType.COMPACTOR) {
+                loaded.add(readRecipe("compactor_augment", ConfiguredRecipe.Type.SHAPELESS, "compactor_augment",
+                        List.of(), Map.of(), List.of("network_component", "DISPENSER", "PISTON")));
+            } else {
+                loaded.add(readRecipe(type.recipeId(), ConfiguredRecipe.Type.SHAPELESS, type.recipeId(),
+                        List.of(), Map.of(), List.of("augment_component", type.getWorkstationMaterial().name())));
+            }
         }
         loaded.add(readRecipe("pocket_link", ConfiguredRecipe.Type.SHAPELESS, "pocket_link",
                 List.of(),
@@ -78,10 +93,17 @@ public class RecipesConfig extends SimpleConfiguration {
                 List.of(),
                 Map.of(),
                 List.of("pocket_augment", "BOW", "ARROW")));
+        loaded.add(readRecipe("rocket_distributer_augment", ConfiguredRecipe.Type.SHAPELESS,
+                "rocket_distributer_augment", List.of(), Map.of(),
+                List.of("pocket_augment", "FIREWORK_ROCKET", "HOPPER")));
         loaded.add(readRecipe("backpack_augment", ConfiguredRecipe.Type.SHAPELESS, "backpack_augment",
                 List.of(),
                 Map.of(),
                 List.of("pocket_augment", "CHEST")));
+        loaded.add(readRecipe("magnet_pocket_augment", ConfiguredRecipe.Type.SHAPELESS, "pocket_augment_magnet",
+                List.of(),
+                Map.of(),
+                List.of("pocket_augment", "magnet_core")));
         loaded.add(readRecipe("chest_linking_tool", ConfiguredRecipe.Type.SHAPED, "chest_linking_tool",
                 List.of(" X ", " S ", " S "),
                 Map.of('X', "network_component", 'S', "STICK"),
@@ -145,6 +167,15 @@ public class RecipesConfig extends SimpleConfiguration {
         writeShapedDefaults("network_chest", "network_chest",
                 List.of("PPP", "PCP", "PPP"),
                 Map.of('P', "PLANKS", 'C', "network_core"));
+        writeShapedDefaults("network_hopper_input", "network_hopper_input",
+                List.of("XDX", "D D", "XHX"),
+                Map.of('X', "PLANKS", 'D', "DIAMOND", 'H', "HOPPER"));
+        writeShapedDefaults("network_hopper_output", "network_hopper_output",
+                List.of("XHX", "D D", "XDX"),
+                Map.of('X', "PLANKS", 'D', "DIAMOND", 'H', "HOPPER"));
+        writeShapedDefaults("magnet_core", "magnet_core",
+                List.of("IDI", "LQL", "CDC"),
+                Map.of('I', "IRON_INGOT", 'D', "DIAMOND", 'L', "LAPIS_LAZULI", 'Q', "QUARTZ", 'C', "COPPER_INGOT"));
         writeShapelessDefaults("network_component", "network_component",
                 List.of("IRON_INGOT", "REDSTONE"));
         writeShapelessDefaults("network_upgrade", "network_upgrade",
@@ -152,8 +183,13 @@ public class RecipesConfig extends SimpleConfiguration {
         writeShapelessDefaults("augment_component", "augment_component",
                 List.of("network_upgrade", "NETHER_QUARTZ"));
         for (AugmentType type : AugmentType.values()) {
-            writeShapelessDefaults(type.recipeId(), type.recipeId(),
-                    List.of("augment_component", type.getWorkstationMaterial().name()));
+            if (type == AugmentType.COMPACTOR) {
+                writeShapelessDefaults("compactor_augment", "compactor_augment",
+                        List.of("network_component", "DISPENSER", "PISTON"));
+            } else {
+                writeShapelessDefaults(type.recipeId(), type.recipeId(),
+                        List.of("augment_component", type.getWorkstationMaterial().name()));
+            }
         }
         writeShapelessDefaults("pocket_link", "pocket_link",
                 List.of("augment_component", "BUNDLE", "CRAFTING_TABLE"));
@@ -163,8 +199,12 @@ public class RecipesConfig extends SimpleConfiguration {
                 List.of("pocket_augment", "GOLDEN_CARROT", "GOLDEN_APPLE", "DIAMOND_SHOVEL"));
         writeShapelessDefaults("quiver_augment", "quiver_augment",
                 List.of("pocket_augment", "BOW", "ARROW"));
+        writeShapelessDefaults("rocket_distributer_augment", "rocket_distributer_augment",
+                List.of("pocket_augment", "FIREWORK_ROCKET", "HOPPER"));
         writeShapelessDefaults("backpack_augment", "backpack_augment",
                 List.of("pocket_augment", "CHEST"));
+        writeShapelessDefaults("magnet_pocket_augment", "pocket_augment_magnet",
+                List.of("pocket_augment", "magnet_core"));
         writeShapedDefaults("chest_linking_tool", "chest_linking_tool",
                 List.of(" X ", " S ", " S "),
                 Map.of('X', "network_component", 'S', "STICK"));

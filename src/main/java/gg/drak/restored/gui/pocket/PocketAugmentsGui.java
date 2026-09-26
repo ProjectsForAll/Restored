@@ -145,6 +145,9 @@ public class PocketAugmentsGui extends AbstractInventoryGui implements PocketLin
         if (type == PocketAugmentType.FEEDING) {
             return FeedingAugmentItem.create();
         }
+        if (type == PocketAugmentType.ROCKET_DISTRIBUTER) {
+            return gg.drak.restored.items.RocketDistributerAugmentItem.create();
+        }
         return PocketAugmentItem.create(type);
     }
 
@@ -209,8 +212,12 @@ public class PocketAugmentsGui extends AbstractInventoryGui implements PocketLin
                 new FeedingAugmentGui(player, linkId).open();
             } else if (type == PocketAugmentType.QUIVER) {
                 new QuiverAugmentGui(player, linkId).open();
+            } else if (type == PocketAugmentType.ROCKET_DISTRIBUTER) {
+                new RocketDistributerAugmentGui(player, linkId).open();
             } else if (type == PocketAugmentType.BACKPACK) {
                 new BackpackAugmentGui(player, linkId).open();
+            } else if (type == PocketAugmentType.MAGNET) {
+                new MagnetPocketAugmentGui(player, linkId).open();
             }
         }
     }

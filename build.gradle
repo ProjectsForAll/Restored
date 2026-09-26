@@ -61,6 +61,15 @@ dependencies {
 
     // Other Plugins
     compileOnly(OTHER_PLUGINS)
+
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.12.2'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher:1.12.2'
+    testCompileOnly 'dev.folia:folia-api:1.21.5-R0.1-SNAPSHOT'
+    testRuntimeOnly 'dev.folia:folia-api:1.21.5-R0.1-SNAPSHOT'
+}
+
+tasks.test {
+    useJUnitPlatform()
 }
 
 processResources {
@@ -90,7 +99,6 @@ shadowJar {
 
     relocate 'de.rapha149.signgui', 'gg.drak.restored.libs.signgui'
 
-    minimize()
 }
 
 tasks.withType(JavaCompile).configureEach {

@@ -13,7 +13,6 @@ import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.inventory.ItemStack;
 
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -29,12 +28,24 @@ public class FeedingFilterPickerGui extends AbstractInventoryGui implements Pock
     private final UUID linkId;
     private int page;
     private final Map<Integer, StoredStack> contentEntries = new HashMap<>();
+    private String searchFilter;
+    private gg.drak.restored.gui.NetworkBrowserPrefs.FilterMode filterMode;
+    private gg.drak.restored.gui.NetworkBrowserPrefs.SortMode sortMode;
+    private gg.drak.restored.gui.NetworkBrowserPrefs.SortDirection sortDirection;
+    private boolean combineStacks;
 
     public FeedingFilterPickerGui(Player player, Network network, UUID linkId, Consumer<ItemStack> onPicked) {
         super(player, CornerColor.YELLOW);
         this.network = network;
         this.linkId = linkId;
         this.onPicked = onPicked;
+        gg.drak.restored.gui.NetworkBrowserPrefs.State prefs =
+                gg.drak.restored.gui.NetworkBrowserPrefs.get(player.getUniqueId());
+        this.searchFilter = prefs.searchFilter();
+        this.filterMode = prefs.filterMode();
+        this.sortMode = prefs.sortMode();
+        this.sortDirection = prefs.sortDirection();
+        this.combineStacks = prefs.combineStacks();
     }
 
     @Override
@@ -52,8 +63,7 @@ public class FeedingFilterPickerGui extends AbstractInventoryGui implements Pock
         ItemStack[] contents = beginShell(GuiLayout.SIZE_LARGE, "#FFED6A&lSelect Filter Item");
         contentEntries.clear();
 
-        List<StoredStack> stacks = new ArrayList<>(network.getCombinedStacks());
-        stacks.sort(Comparator.comparing(s -> StoredStack.itemKey(s.getTemplate())));
+        List<StoredStack> stacks = displayEntries();
 
         int perPage = perPage(GuiLayout.SIZE_LARGE);
         int totalPages = Math.max(1, (int) Math.ceil(stacks.size() / (double) perPage));
@@ -72,8 +82,36 @@ public class FeedingFilterPickerGui extends AbstractInventoryGui implements Pock
         }
 
         placeReturnButton(contents, "back");
+        gg.drak.restored.gui.NetworkItemSearchControls.place(this, contents, state());
         placePagination(contents, page, stacks.size());
         finishAndOpen(contents);
+    }
+
+    private gg.drak.restored.gui.NetworkBrowserPrefs.State state() {
+        return new gg.drak.restored.gui.NetworkBrowserPrefs.State(
+                searchFilter, filterMode, sortMode, sortDirection, combineStacks);
+    }
+
+    private void savePrefs() {
+        gg.drak.restored.gui.NetworkBrowserPrefs.set(player.getUniqueId(), state());
+    }
+
+    private List<StoredStack> displayEntries() {
+        List<StoredStack> sorted = gg.drak.restored.gui.NetworkItemSearchControls
+                .filterAndSort(network.getCombinedStacks(), state());
+        if (combineStacks) {
+            return sorted;
+        }
+        List<StoredStack> split = new ArrayList<>();
+        for (StoredStack stored : sorted) {
+            long remaining = stored.getAmount();
+            while (remaining > 0) {
+                long shown = Math.min(64, remaining);
+                split.add(new StoredStack(stored.getTemplate(), shown));
+                remaining -= shown;
+            }
+        }
+        return split;
     }
 
     @Override
@@ -95,7 +133,54 @@ public class FeedingFilterPickerGui extends AbstractInventoryGui implements Pock
             return;
         }
         if ("back".equals(key)) {
+            savePrefs();
             onPicked.accept(null);
+            return;
+        }
+        if ("search".equals(key)) {
+            if (event.isShiftClick()) {
+                searchFilter = "";
+                page = 0;
+                savePrefs();
+                render();
+            } else {
+                gg.drak.restored.gui.NetworkItemSearchPrompt.open(player, result -> {
+                    if (result != null) {
+                        searchFilter = result;
+                        page = 0;
+                        savePrefs();
+                    }
+                    open();
+                });
+            }
+            return;
+        }
+        if ("filter_mode".equals(key)) {
+            filterMode = filterMode.next();
+            page = 0;
+            savePrefs();
+            render();
+            return;
+        }
+        if ("sort_mode".equals(key)) {
+            sortMode = sortMode.next();
+            page = 0;
+            savePrefs();
+            render();
+            return;
+        }
+        if ("sort_dir".equals(key)) {
+            sortDirection = sortDirection.toggle();
+            page = 0;
+            savePrefs();
+            render();
+            return;
+        }
+        if ("combine".equals(key)) {
+            combineStacks = !combineStacks;
+            page = 0;
+            savePrefs();
+            render();
             return;
         }
         StoredStack stack = contentEntries.get(event.getRawSlot());

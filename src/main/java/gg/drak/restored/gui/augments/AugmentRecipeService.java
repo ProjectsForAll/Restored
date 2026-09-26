@@ -25,6 +25,15 @@ public final class AugmentRecipeService {
     }
 
     public static ItemStack matchCrafting(ItemStack[] matrix3x3) {
+        return matchCrafting(matrix3x3, null);
+    }
+
+    /**
+     * Resolves a crafting recipe for a 3x3 matrix.
+     * Prefers {@link org.bukkit.Bukkit#getCraftingRecipe} (fast) when a world is provided,
+     * then falls back to iterating shaped/shapeless recipes.
+     */
+    public static ItemStack matchCrafting(ItemStack[] matrix3x3, org.bukkit.World world) {
         if (matrix3x3 == null || matrix3x3.length != 9) {
             return null;
         }
@@ -32,6 +41,20 @@ public final class AugmentRecipeService {
         for (int i = 0; i < 9; i++) {
             ItemStack stack = matrix3x3[i];
             craftMatrix[i] = stack == null || stack.getType().isAir() ? null : stack.clone();
+        }
+
+        if (world != null) {
+            try {
+                Recipe recipe = Bukkit.getCraftingRecipe(craftMatrix, world);
+                if (recipe != null) {
+                    ItemStack result = recipe.getResult();
+                    if (result != null && !result.getType().isAir()) {
+                        return result.clone();
+                    }
+                }
+            } catch (Throwable ignored) {
+                // Older / unexpected API — fall through to iterator.
+            }
         }
 
         Iterator<Recipe> it = Bukkit.recipeIterator();

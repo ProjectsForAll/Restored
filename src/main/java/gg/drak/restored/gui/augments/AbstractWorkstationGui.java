@@ -692,7 +692,10 @@ public abstract class AbstractWorkstationGui extends AbstractInventoryGui {
             if (inserted < stack.getAmount()) {
                 ItemStack leftover = stack.clone();
                 leftover.setAmount((int) (stack.getAmount() - inserted));
-                player.getInventory().addItem(leftover);
+                Map<Integer, ItemStack> inventoryLeftover = player.getInventory().addItem(leftover);
+                for (ItemStack drop : inventoryLeftover.values()) {
+                    player.getWorld().dropItemNaturally(player.getLocation(), drop);
+                }
             }
         }
         craftSlots.clear();
@@ -701,7 +704,10 @@ public abstract class AbstractWorkstationGui extends AbstractInventoryGui {
             if (inserted < outputBuffer.getAmount()) {
                 ItemStack leftover = outputBuffer.clone();
                 leftover.setAmount((int) (outputBuffer.getAmount() - inserted));
-                player.getInventory().addItem(leftover);
+                Map<Integer, ItemStack> inventoryLeftover = player.getInventory().addItem(leftover);
+                for (ItemStack drop : inventoryLeftover.values()) {
+                    player.getWorld().dropItemNaturally(player.getLocation(), drop);
+                }
             }
             outputBuffer = null;
         }
@@ -776,7 +782,12 @@ public abstract class AbstractWorkstationGui extends AbstractInventoryGui {
             return false;
         }
         if (!canAcceptResult(result)) {
-            return false;
+            // The caller may have checked capacity immediately before consuming its inputs.
+            // If the output changed between those two operations, return the result instead of
+            // consuming inputs and silently losing the craft.
+            giveOrDrop(result.clone());
+            player.sendMessage(LegacyColors.color("#FF5555Output became unavailable; the result was returned."));
+            return true;
         }
         if (sendToNetwork) {
             long inserted = network.insert(result, result.getAmount());
@@ -788,14 +799,18 @@ public abstract class AbstractWorkstationGui extends AbstractInventoryGui {
                 result.setAmount((int) (result.getAmount() - inserted));
             }
             Map<Integer, ItemStack> leftover = player.getInventory().addItem(result);
-            network.save();
             if (!leftover.isEmpty()) {
                 player.sendMessage(LegacyColors.color("#FF5555Network and inventory are full."));
                 for (ItemStack drop : leftover.values()) {
-                    network.insert(drop, drop.getAmount());
+                    long restored = network.insert(drop, drop.getAmount());
+                    if (restored < drop.getAmount()) {
+                        ItemStack unrecovered = drop.clone();
+                        unrecovered.setAmount((int) (drop.getAmount() - restored));
+                        player.getWorld().dropItemNaturally(player.getLocation(), unrecovered);
+                    }
                 }
-                return false;
             }
+            network.save();
             return true;
         }
 
@@ -805,6 +820,16 @@ public abstract class AbstractWorkstationGui extends AbstractInventoryGui {
             outputBuffer.setAmount(outputBuffer.getAmount() + result.getAmount());
         }
         return true;
+    }
+
+    protected void giveOrDrop(ItemStack stack) {
+        if (stack == null || stack.getType().isAir()) {
+            return;
+        }
+        Map<Integer, ItemStack> leftover = player.getInventory().addItem(stack);
+        for (ItemStack drop : leftover.values()) {
+            player.getWorld().dropItemNaturally(player.getLocation(), drop);
+        }
     }
 
     protected static ItemStack withLore(ItemStack stack, List<String> lore) {

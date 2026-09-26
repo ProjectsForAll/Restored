@@ -1,7 +1,9 @@
 package gg.drak.restored.database;
 
 import gg.drak.restored.data.AugmentType;
+import gg.drak.restored.data.CompactConfiguration;
 import gg.drak.restored.data.Network;
+import gg.drak.restored.data.NetworkHopperRole;
 import gg.drak.restored.data.NetworkManager;
 import gg.drak.restored.data.NetworkRole;
 import gg.drak.restored.data.StoredStack;
@@ -32,7 +34,9 @@ public final class NetworkSnapshot {
     private final List<PermissionEntry> permissions;
     private final List<OpenStatEntry> openStats;
     private final List<AugmentType> augments;
+    private final List<CompactConfiguration> compactConfigurations;
     private final List<LinkedChestEntry> linkedChests;
+    private final List<LinkedHopperEntry> linkedHoppers;
 
     private NetworkSnapshot(
             String identifier,
@@ -48,7 +52,9 @@ public final class NetworkSnapshot {
             List<PermissionEntry> permissions,
             List<OpenStatEntry> openStats,
             List<AugmentType> augments,
-            List<LinkedChestEntry> linkedChests
+            List<CompactConfiguration> compactConfigurations,
+            List<LinkedChestEntry> linkedChests,
+            List<LinkedHopperEntry> linkedHoppers
     ) {
         this.identifier = identifier;
         this.ownerUuid = ownerUuid;
@@ -63,7 +69,9 @@ public final class NetworkSnapshot {
         this.permissions = permissions;
         this.openStats = openStats;
         this.augments = augments;
+        this.compactConfigurations = compactConfigurations;
         this.linkedChests = linkedChests;
+        this.linkedHoppers = linkedHoppers;
     }
 
     public static NetworkSnapshot capture(Network network) {
@@ -88,6 +96,11 @@ public final class NetworkSnapshot {
         }
 
         List<AugmentType> augments = new ArrayList<>(network.getInstalledAugments());
+
+        List<CompactConfiguration> compactConfigurations = new ArrayList<>();
+        for (CompactConfiguration configuration : network.getCompactConfigurations()) {
+            compactConfigurations.add(configuration.copy());
+        }
 
         List<LinkedChestEntry> linkedChests = new ArrayList<>();
         for (String key : network.getLinkedChestKeys()) {
@@ -119,6 +132,32 @@ public final class NetworkSnapshot {
             }
         }
 
+        List<LinkedHopperEntry> linkedHoppers = new ArrayList<>();
+        for (String key : network.getLinkedHopperKeys()) {
+            Location location = LinkedChestStorage.parseLocationKey(key);
+            NetworkHopperRole role = network.getLinkedHopperRole(key);
+            if (location != null && location.getWorld() != null && role != null) {
+                linkedHoppers.add(new LinkedHopperEntry(location.getWorld().getName(),
+                        location.getBlockX(), location.getBlockY(), location.getBlockZ(), role.id()));
+            } else {
+                String[] parts = key.split(":");
+                if (parts.length >= 4 && role != null) {
+                    try {
+                        int z = Integer.parseInt(parts[parts.length - 1]);
+                        int y = Integer.parseInt(parts[parts.length - 2]);
+                        int x = Integer.parseInt(parts[parts.length - 3]);
+                        StringBuilder worldBuilder = new StringBuilder(parts[0]);
+                        for (int i = 1; i < parts.length - 3; i++) {
+                            worldBuilder.append(':').append(parts[i]);
+                        }
+                        linkedHoppers.add(new LinkedHopperEntry(worldBuilder.toString(), x, y, z, role.id()));
+                    } catch (NumberFormatException ignored) {
+                        // skip malformed
+                    }
+                }
+            }
+        }
+
         return new NetworkSnapshot(
                 network.getIdentifierString(),
                 network.getOwnerUuid().toString(),
@@ -133,7 +172,9 @@ public final class NetworkSnapshot {
                 List.copyOf(permissions),
                 List.copyOf(openStats),
                 List.copyOf(augments),
-                List.copyOf(linkedChests)
+                List.copyOf(compactConfigurations),
+                List.copyOf(linkedChests),
+                List.copyOf(linkedHoppers)
         );
     }
 
@@ -188,6 +229,23 @@ public final class NetworkSnapshot {
 
         public String locationKey() {
             return NetworkManager.locationKey(world, x, y, z);
+        }
+    }
+
+    @Getter
+    public static final class LinkedHopperEntry {
+        private final String world;
+        private final int x;
+        private final int y;
+        private final int z;
+        private final String role;
+
+        public LinkedHopperEntry(String world, int x, int y, int z, String role) {
+            this.world = world;
+            this.x = x;
+            this.y = y;
+            this.z = z;
+            this.role = role;
         }
     }
 }

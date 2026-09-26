@@ -123,18 +123,28 @@ public class PocketLinkGui extends AbstractInventoryGui implements PocketLinkGui
                 player.sendMessage(LegacyColors.color("#FF5555You cannot deposit into this network."));
                 return;
             }
-            long amount = clicked.getAmount();
-            long inserted = network.insert(clicked, amount);
-            if (inserted > 0) {
+            // Depositing from afar: load the linked chests first, otherwise insert() only ever
+            // sees virtual storage and can report the network full while linked chests have room.
+            // The chunk load is async, so the event object is long finished by the time this
+            // runs — take the item out of the player's inventory now and hand back what was not
+            // accepted, rather than calling event.setCurrentItem() on a stale event.
+            ItemStack deposit = clicked.clone();
+            long amount = deposit.getAmount();
+            event.setCurrentItem(null);
+            gg.drak.restored.util.LinkedChestStorage.prepareLinkedChunks(network, null, () -> {
+                long inserted = network.insert(deposit, amount);
                 long remaining = amount - inserted;
-                if (remaining <= 0) {
-                    event.setCurrentItem(null);
-                } else {
-                    clicked.setAmount((int) remaining);
-                    event.setCurrentItem(clicked);
+                if (remaining > 0) {
+                    ItemStack back = deposit.clone();
+                    back.setAmount((int) remaining);
+                    for (ItemStack overflow : player.getInventory().addItem(back).values()) {
+                        player.getWorld().dropItemNaturally(player.getLocation(), overflow);
+                    }
                 }
-                network.save();
-            }
+                if (inserted > 0) {
+                    network.save();
+                }
+            });
             return;
         }
         if (event.getClickedInventory() == null || !event.getClickedInventory().equals(inventory)) {
@@ -177,7 +187,16 @@ public class PocketLinkGui extends AbstractInventoryGui implements PocketLinkGui
                 player.sendMessage(LegacyColors.color("#FF5555You do not have access to this network."));
                 return;
             }
-            new NetworkItemsGui(player, network).open();
+            // Opened away from the network: linked chests are usually in unloaded chunks, and
+            // resolveInventories() skips those, so their contents would be invisible here.
+            gg.drak.restored.util.LinkedChestStorage.prepareLinkedChunks(
+                    network, player.getUniqueId(), () -> {
+                        if (!player.isOnline()) {
+                            gg.drak.restored.util.LinkedChestStorage.releaseLease(player.getUniqueId());
+                            return;
+                        }
+                        new NetworkItemsGui(player, network).open();
+                    });
             return;
         }
 

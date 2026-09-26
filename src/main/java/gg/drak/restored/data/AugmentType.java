@@ -17,7 +17,8 @@ public enum AugmentType {
     CARTOGRAPHY("cartography", "Cartography", Material.CARTOGRAPHY_TABLE, Layout.CARTOGRAPHY),
     BREWING("brewing", "Brewing", Material.BREWING_STAND, Layout.BREWING),
     ENCHANTING("enchanting", "Enchanting", Material.ENCHANTING_TABLE, Layout.ENCHANTING),
-    ENDER_CHEST("enderchest", "Ender Chest", Material.ENDER_CHEST, Layout.ENDER_CHEST);
+    ENDER_CHEST("enderchest", "Ender Chest", Material.ENDER_CHEST, Layout.ENDER_CHEST),
+    COMPACTOR("compactor", "Compactor", Material.PISTON, Layout.COMPACTOR);
 
     private final String id;
     private final String displayName;
@@ -78,6 +79,7 @@ public enum AugmentType {
         CARTOGRAPHY,
         BREWING,
         ENCHANTING,
-        ENDER_CHEST
+        ENDER_CHEST,
+        COMPACTOR
     }
 }

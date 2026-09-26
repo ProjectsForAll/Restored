@@ -8,14 +8,19 @@ import gg.drak.restored.config.DatabaseConfig;
 import gg.drak.restored.config.MainConfig;
 import gg.drak.restored.config.RecipesConfig;
 import gg.drak.restored.data.NetworkManager;
+import gg.drak.restored.data.PlayerPreferences;
 import gg.drak.restored.database.MainOperator;
 import gg.drak.restored.events.ChestLinkingToolListener;
+import gg.drak.restored.events.CompactorAugmentListener;
 import gg.drak.restored.events.CraftGuardListener;
 import gg.drak.restored.events.FeedingAugmentListener;
 import gg.drak.restored.events.ItemLoreGuardListener;
 import gg.drak.restored.events.MainListener;
+import gg.drak.restored.events.NetworkHopperListener;
+import gg.drak.restored.events.MagnetPocketAugmentListener;
 import gg.drak.restored.events.PocketLinkListener;
 import gg.drak.restored.events.QuiverAugmentListener;
+import gg.drak.restored.events.RocketDistributerAugmentListener;
 import gg.drak.restored.gui.GuiListener;
 import gg.drak.restored.gui.NetworkBrowserPrefs;
 import gg.drak.restored.items.RestoredItemRegistry;
@@ -47,9 +52,17 @@ public final class Restored extends BetterPlugin {
     @Getter @Setter
     private static ChestLinkingToolListener chestLinkingToolListener;
     @Getter @Setter
+    private static NetworkHopperListener networkHopperListener;
+    @Getter @Setter
+    private static MagnetPocketAugmentListener magnetPocketAugmentListener;
+    @Getter @Setter
     private static FeedingAugmentListener feedingAugmentListener;
     @Getter @Setter
     private static QuiverAugmentListener quiverAugmentListener;
+    @Getter @Setter
+    private static RocketDistributerAugmentListener rocketDistributerAugmentListener;
+    @Getter @Setter
+    private static CompactorAugmentListener compactorAugmentListener;
     @Getter @Setter
     private static NetworksCMD networksCMD;
     @Getter @Setter
@@ -82,14 +95,19 @@ public final class Restored extends BetterPlugin {
         setDatabase(new MainOperator());
         getDatabase().ensureDatabase();
         getDatabase().ensureTables();
+        PlayerPreferences.init(getDatabase());
 
         NetworkManager.loadAll(getDatabase().loadAllNetworks());
 
         setMainListener(new MainListener());
         setPocketLinkListener(new PocketLinkListener());
         setChestLinkingToolListener(new ChestLinkingToolListener());
+        setNetworkHopperListener(new NetworkHopperListener());
+        setMagnetPocketAugmentListener(new MagnetPocketAugmentListener());
         setFeedingAugmentListener(new FeedingAugmentListener());
         setQuiverAugmentListener(new QuiverAugmentListener());
+        setRocketDistributerAugmentListener(new RocketDistributerAugmentListener());
+        setCompactorAugmentListener(new CompactorAugmentListener());
         setCraftGuardListener(new CraftGuardListener());
         setItemLoreGuardListener(new ItemLoreGuardListener());
         setGuiListener(new GuiListener());

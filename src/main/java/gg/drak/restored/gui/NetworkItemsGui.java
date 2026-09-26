@@ -10,6 +10,7 @@ import gg.drak.restored.data.Network;
 import gg.drak.restored.data.StoredStack;
 import gg.drak.restored.gui.augments.AugmentsListGui;
 import gg.drak.restored.util.LegacyColors;
+import gg.drak.restored.util.LinkedChestStorage;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.Material;
@@ -65,6 +66,8 @@ public class NetworkItemsGui extends PaginatedInventoryGui {
     private boolean combineStacks;
     private final Map<Integer, DisplayEntry> contentEntries = new HashMap<>();
 
+    private boolean warnedUnavailable;
+
     public NetworkItemsGui(Player player, Network network) {
         super(GuiConfig.builder(player).cornerColor(CornerColor.YELLOW).backSlot(BACK_SLOT).build());
         this.network = network;
@@ -104,7 +107,26 @@ public class NetworkItemsGui extends PaginatedInventoryGui {
 
         placeControls(contents);
         placePaginationChrome(contents, entries.size());
+        warnUnavailableLinks();
         finishAndOpen(contents);
+    }
+
+    /**
+     * Linked chests in unloaded chunks cannot be read, so their contents are missing from this
+     * view. Say so once per open rather than silently showing a smaller total — a silently wrong
+     * count is what makes items look like they randomly vanish.
+     */
+    private void warnUnavailableLinks() {
+        if (warnedUnavailable) {
+            return;
+        }
+        warnedUnavailable = true;
+        int unavailable = LinkedChestStorage.countUnavailableLinks(network);
+        if (unavailable > 0) {
+            player.sendMessage(LegacyColors.color(
+                    "#FF5555" + unavailable + " linked chest(s) are in unloaded chunks; "
+                            + "their contents are not shown."));
+        }
     }
 
     private void placeControls(ItemStack[] contents) {
@@ -505,12 +527,22 @@ public class NetworkItemsGui extends PaginatedInventoryGui {
             int stackSize = (int) Math.min(taken, Math.min(DISPLAY_STACK_SIZE, give.getMaxStackSize()));
             give.setAmount(stackSize);
             HashMap<Integer, ItemStack> leftover = player.getInventory().addItem(give.clone());
-            if (!leftover.isEmpty()) {
-                network.insert(give, stackSize);
+            long notAdded = leftover.values().stream()
+                    .filter(stack -> stack != null && !stack.getType().isAir())
+                    .mapToLong(ItemStack::getAmount)
+                    .sum();
+            long added = stackSize - notAdded;
+            taken -= added;
+            if (notAdded > 0) {
+                long returned = network.insert(give, notAdded);
+                if (returned < notAdded) {
+                    ItemStack drop = give.clone();
+                    drop.setAmount((int) (notAdded - returned));
+                    player.getWorld().dropItemNaturally(player.getLocation(), drop);
+                }
                 player.sendMessage(LegacyColors.color("#FF5555Your inventory is full."));
                 break;
             }
-            taken -= stackSize;
         }
         render();
     }
@@ -568,4 +600,32 @@ public class NetworkItemsGui extends PaginatedInventoryGui {
             });
         }
     }
+
+    /**
+     * Releases any linked-chunk tickets when the player leaves this view for good. Navigating to
+     * a sub-menu or opening the chat search prompt also fires a close, so the tickets are kept if
+     * another Restored GUI is opening in the same tick — dropping them there would let the chunks
+     * unload and the linked-chest items vanish partway through the session.
+     */
+    @Override
+    public void handleClose(org.bukkit.event.inventory.InventoryCloseEvent event) {
+        java.util.UUID playerId = player.getUniqueId();
+        Bukkit.getScheduler().runTask(Restored.getInstance(), () -> {
+            if (!player.isOnline()) {
+                LinkedChestStorage.releaseLease(playerId);
+                return;
+            }
+            // The chat search prompt closes the inventory and leaves none open while the player
+            // types; the lease has to survive that or the results come back with items missing.
+            if (PENDING_CHAT.containsKey(playerId)) {
+                return;
+            }
+            org.bukkit.inventory.InventoryHolder current =
+                    player.getOpenInventory().getTopInventory().getHolder();
+            if (!(current instanceof AbstractInventoryGui)) {
+                LinkedChestStorage.releaseLease(playerId);
+            }
+        });
+    }
+
 }

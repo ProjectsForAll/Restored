@@ -88,6 +88,15 @@ public class GuiListener implements Listener {
         gui.handleDrag(event);
     }
 
+    /**
+     * Frees any linked-chunk tickets a disconnecting player still holds. Without this a player
+     * who quits while browsing a network remotely would pin its chests' chunks indefinitely.
+     */
+    @EventHandler
+    public void onPlayerQuit(org.bukkit.event.player.PlayerQuitEvent event) {
+        gg.drak.restored.util.LinkedChestStorage.releaseLease(event.getPlayer().getUniqueId());
+    }
+
     @EventHandler
     public void onInventoryClose(InventoryCloseEvent event) {
         InventoryHolder holder = event.getInventory().getHolder();

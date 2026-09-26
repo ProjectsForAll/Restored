@@ -39,6 +39,11 @@ public abstract class AbstractInventoryGui extends EditorInventoryGui {
         }
     }
 
+    /** Exposes the editor's slot binding to shared GUI chrome helpers. */
+    public final void bindGuiSlot(int slot, String key) {
+        bindSlot(slot, key);
+    }
+
     public abstract void open();
 
     public abstract void handleClick(InventoryClickEvent event);

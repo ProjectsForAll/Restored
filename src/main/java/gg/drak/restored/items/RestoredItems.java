@@ -2,6 +2,7 @@ package gg.drak.restored.items;
 
 import gg.drak.restored.Restored;
 import gg.drak.restored.util.LegacyColors;
+import gg.drak.restored.util.UuidUtils;
 import host.plas.bou.items.ItemUtils;
 import org.bukkit.Material;
 import org.bukkit.NamespacedKey;
@@ -30,11 +31,20 @@ public final class RestoredItems {
     public static final String TYPE_POCKET_LINK = "pocket_link";
     public static final String TYPE_POCKET_AUGMENT = "pocket_augment";
     public static final String TYPE_CHEST_LINKING_TOOL = "chest_linking_tool";
+    public static final String TYPE_NETWORK_HOPPER_INPUT = "network_hopper_input";
+    public static final String TYPE_NETWORK_HOPPER_OUTPUT = "network_hopper_output";
+    public static final String TYPE_MAGNET_CORE = "magnet_core";
 
     private RestoredItems() {
     }
 
     public static Optional<String> getType(ItemStack stack) {
+        // ItemUtils.getTag copies the whole ItemMeta. Restored items always carry meta, so
+        // this rejects ordinary stacks (nearly every slot in the inventory scans that run
+        // every tick) before any copy is made.
+        if (stack == null || stack.getType().isAir() || !stack.hasItemMeta()) {
+            return Optional.empty();
+        }
         return ItemUtils.getTag(stack, Restored.getInstance(), TAG_TYPE);
     }
 
@@ -48,8 +58,7 @@ public final class RestoredItems {
 
     public static Optional<UUID> getNetworkId(ItemStack stack) {
         return ItemUtils.getTag(stack, Restored.getInstance(), TAG_NETWORK_ID)
-                .filter(s -> s != null && !s.isBlank())
-                .map(UUID::fromString);
+                .flatMap(UuidUtils::parse);
     }
 
     public static ItemStack withNetworkId(ItemStack stack, UUID networkId) {

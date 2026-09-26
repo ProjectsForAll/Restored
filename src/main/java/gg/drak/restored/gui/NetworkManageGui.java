@@ -149,6 +149,10 @@ public class NetworkManageGui extends AbstractInventoryGui {
             return;
         }
         Location oldLocation = network.getLocation();
+        if (oldLocation == null || oldLocation.getWorld() == null) {
+            p.sendMessage(LegacyColors.color("#FF5555The network's world is not currently loaded."));
+            return;
+        }
         Block block = oldLocation.getBlock();
         NetworkBlockTags.clearNetworkId(block);
         block.setType(Material.AIR);
@@ -157,7 +161,10 @@ public class NetworkManageGui extends AbstractInventoryGui {
         network.save();
 
         ItemStack chestItem = NetworkChestItem.create(network.getIdentifier());
-        p.getInventory().addItem(chestItem);
+        java.util.Map<Integer, ItemStack> leftover = p.getInventory().addItem(chestItem);
+        for (ItemStack drop : leftover.values()) {
+            p.getWorld().dropItemNaturally(p.getLocation(), drop);
+        }
         p.sendMessage(LegacyColors.color("#00FC88Network chest picked up. Place it to relocate."));
         new NetworksListGui(p).open();
     }
