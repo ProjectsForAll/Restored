@@ -164,8 +164,14 @@ public final class RocketDistributerAugmentListener implements Listener {
             boolean allowed = !anyFilter && mode == PocketLinkItem.FeedFilterMode.BLACKLIST
                     || mode == PocketLinkItem.FeedFilterMode.WHITELIST && matched
                     || mode == PocketLinkItem.FeedFilterMode.BLACKLIST && !matched;
-            if (allowed) {
-                result.add(new Candidate(stored.itemKey(), template, stored.getAmount()));
+            if (!allowed) {
+                continue;
+            }
+            // Listings include linked chests that cannot be reached right now; only offer what
+            // extract() can actually take.
+            long reachable = network.getCombinedAmount(stored.itemKey());
+            if (reachable > 0) {
+                result.add(new Candidate(stored.itemKey(), template, reachable));
             }
         }
         result.sort(Comparator.comparing(Candidate::itemKey));

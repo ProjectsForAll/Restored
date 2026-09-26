@@ -13,6 +13,7 @@ import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.inventory.InventoryCloseEvent;
 import org.bukkit.event.inventory.InventoryDragEvent;
 import org.bukkit.event.inventory.InventoryMoveItemEvent;
+import org.bukkit.event.inventory.InventoryOpenEvent;
 import org.bukkit.event.world.ChunkLoadEvent;
 import org.bukkit.event.world.ChunkUnloadEvent;
 import org.bukkit.event.world.WorldLoadEvent;
@@ -52,6 +53,12 @@ public class LinkedChestCacheListener implements Listener {
     public void onMove(InventoryMoveItemEvent event) {
         markDirty(event.getSource());
         markDirty(event.getDestination());
+    }
+
+    /** Opening a linked chest refreshes its snapshot, catching changes no event reported. */
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onOpen(InventoryOpenEvent event) {
+        markDirty(event.getView().getTopInventory());
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)

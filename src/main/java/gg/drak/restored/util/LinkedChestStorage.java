@@ -548,7 +548,8 @@ public final class LinkedChestStorage {
         if (network == null || stack == null || stack.getType().isAir() || amount <= 0) {
             return 0;
         }
-        String itemKey = StoredStack.itemKey(stack);
+        // Hashed only when a chest has no empty slot and partial stacks decide whether it fits.
+        String itemKey = null;
         long remaining = amount;
         long inserted = 0;
         List<String> dead = new ArrayList<>();
@@ -556,8 +557,16 @@ public final class LinkedChestStorage {
             if (remaining <= 0) {
                 break;
             }
-            if (!view.live() || view.snapshot() == null || !view.snapshot().hasRoomFor(itemKey)) {
+            if (!view.live() || view.snapshot() == null) {
                 continue;
+            }
+            if (view.snapshot().emptySlots() <= 0) {
+                if (itemKey == null) {
+                    itemKey = StoredStack.itemKey(stack);
+                }
+                if (!view.snapshot().hasRoomFor(itemKey)) {
+                    continue;
+                }
             }
             LiveChest live = resolveLive(network, view.key(), dead);
             if (live == null) {

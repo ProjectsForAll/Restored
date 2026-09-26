@@ -397,7 +397,9 @@ public class QuiverAugmentListener implements Listener {
             boolean allowed = !anyFilter && mode == PocketLinkItem.FeedFilterMode.BLACKLIST
                     || mode == PocketLinkItem.FeedFilterMode.WHITELIST && matched
                     || mode == PocketLinkItem.FeedFilterMode.BLACKLIST && !matched;
-            if (allowed && stored.getAmount() > 0) {
+            // Listings include linked chests that cannot be reached right now; skip items only
+            // they hold so an unreachable first choice cannot block every other arrow.
+            if (allowed && network.getCombinedAmount(stored.itemKey()) > 0) {
                 return new Selection(network, StoredStack.itemKey(template), template);
             }
         }
