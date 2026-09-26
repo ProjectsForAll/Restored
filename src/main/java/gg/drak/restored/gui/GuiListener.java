@@ -95,6 +95,31 @@ public class GuiListener implements Listener {
     @EventHandler
     public void onPlayerQuit(org.bukkit.event.player.PlayerQuitEvent event) {
         gg.drak.restored.util.LinkedChestStorage.releaseLease(event.getPlayer().getUniqueId());
+        gg.drak.restored.data.AdminAccess.onQuit(event.getPlayer().getUniqueId());
+    }
+
+    /**
+     * Owner access granted from the admin network list lasts while the admin stays inside
+     * Restored menus. Moving between menus, or typing a search into chat, briefly leaves no menu
+     * open, so the check runs a tick later and ignores players answering a search prompt.
+     */
+    private static void endAdminSessionIfLeaving(Player player) {
+        java.util.UUID playerId = player.getUniqueId();
+        if (!gg.drak.restored.data.AdminAccess.hasSessionGrants(playerId)) {
+            return;
+        }
+        Bukkit.getScheduler().runTask(Restored.getInstance(), () -> {
+            if (!player.isOnline()) {
+                return;
+            }
+            if (NetworkItemSearchPrompt.isPending(playerId) || NetworkItemsGui.isAwaitingSearch(playerId)) {
+                return;
+            }
+            InventoryHolder current = player.getOpenInventory().getTopInventory().getHolder();
+            if (!(current instanceof AbstractInventoryGui)) {
+                gg.drak.restored.data.AdminAccess.clearSessionGrants(playerId);
+            }
+        });
     }
 
     @EventHandler
@@ -107,6 +132,7 @@ public class GuiListener implements Listener {
             return;
         }
         gui.handleClose(event);
+        endAdminSessionIfLeaving(player);
         if (gui instanceof PocketLinkGuiBound bound) {
             Bukkit.getScheduler().runTask(Restored.getInstance(), () -> {
                 if (!player.isOnline()) {

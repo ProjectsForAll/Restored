@@ -133,7 +133,7 @@ public class Network {
     }
 
     public NetworkRole getRole(UUID playerUuid) {
-        if (isOwner(playerUuid)) {
+        if (actsAsOwner(playerUuid)) {
             return NetworkRole.ADMIN;
         }
         return roles.getOrDefault(playerUuid, NetworkRole.BLOCKED);
@@ -151,28 +151,38 @@ public class Network {
         markDirty();
     }
 
+    /** The recorded owner only; see {@link #actsAsOwner} for access decisions. */
     public boolean isOwner(UUID playerUuid) {
         return ownerUuid.equals(playerUuid);
     }
 
+    /**
+     * True for the owner and for a server admin with owner-level access to this network (admin
+     * mode, or opened from the admin network list). Use this for permission checks; use
+     * {@link #isOwner} only where the recorded owner itself matters.
+     */
+    public boolean actsAsOwner(UUID playerUuid) {
+        return isOwner(playerUuid) || AdminAccess.actsAsOwner(playerUuid, identifier);
+    }
+
     public boolean canAccess(UUID playerUuid) {
-        return isOwner(playerUuid) || getRole(playerUuid).canAccess();
+        return actsAsOwner(playerUuid) || getRole(playerUuid).canAccess();
     }
 
     public boolean canDeposit(UUID playerUuid) {
-        return isOwner(playerUuid) || getRole(playerUuid).canDeposit();
+        return actsAsOwner(playerUuid) || getRole(playerUuid).canDeposit();
     }
 
     public boolean canWithdraw(UUID playerUuid) {
-        return isOwner(playerUuid) || getRole(playerUuid).canWithdraw();
+        return actsAsOwner(playerUuid) || getRole(playerUuid).canWithdraw();
     }
 
     public boolean canManage(UUID playerUuid) {
-        return isOwner(playerUuid) || getRole(playerUuid).canManage();
+        return actsAsOwner(playerUuid) || getRole(playerUuid).canManage();
     }
 
     public boolean canUseAugments(UUID playerUuid) {
-        return isOwner(playerUuid) || getRole(playerUuid).canUseAugments();
+        return actsAsOwner(playerUuid) || getRole(playerUuid).canUseAugments();
     }
 
     public boolean hasAugment(AugmentType type) {

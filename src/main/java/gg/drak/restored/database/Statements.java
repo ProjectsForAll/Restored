@@ -97,6 +97,11 @@ public final class Statements {
                 "PlayerUuid VARCHAR(36) NOT NULL, " +
                 "MagnetToNetwork BOOLEAN NOT NULL DEFAULT FALSE, " +
                 "PRIMARY KEY (PlayerUuid) " +
+                ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;; " +
+
+                "CREATE TABLE IF NOT EXISTS `%table_prefix%AdminModes` ( " +
+                "PlayerUuid VARCHAR(36) NOT NULL, " +
+                "PRIMARY KEY (PlayerUuid) " +
                 ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;; "
         ),
 
@@ -166,6 +171,12 @@ public final class Statements {
                 "ON DUPLICATE KEY UPDATE MagnetToNetwork = VALUES(MagnetToNetwork);"),
 
         GET_PLAYER_PREFERENCES("SELECT * FROM `%table_prefix%PlayerPreferences`;"),
+
+        INSERT_ADMIN_MODE("INSERT IGNORE INTO `%table_prefix%AdminModes` (PlayerUuid) VALUES (?);"),
+
+        DELETE_ADMIN_MODE("DELETE FROM `%table_prefix%AdminModes` WHERE PlayerUuid = ?;"),
+
+        GET_ADMIN_MODES("SELECT * FROM `%table_prefix%AdminModes`;"),
         ;
 
         private final String statement;
@@ -261,6 +272,11 @@ public final class Statements {
                 "PlayerUuid TEXT NOT NULL, " +
                 "MagnetToNetwork INTEGER NOT NULL DEFAULT 0, " +
                 "PRIMARY KEY (PlayerUuid) " +
+                ");; " +
+
+                "CREATE TABLE IF NOT EXISTS `%table_prefix%AdminModes` ( " +
+                "PlayerUuid TEXT NOT NULL, " +
+                "PRIMARY KEY (PlayerUuid) " +
                 ");; "
         ),
 
@@ -319,6 +335,12 @@ public final class Statements {
         INSERT_PLAYER_PREFERENCE("INSERT OR REPLACE INTO `%table_prefix%PlayerPreferences` (PlayerUuid, MagnetToNetwork) VALUES (?, ?);"),
 
         GET_PLAYER_PREFERENCES("SELECT * FROM `%table_prefix%PlayerPreferences`;"),
+
+        INSERT_ADMIN_MODE("INSERT OR IGNORE INTO `%table_prefix%AdminModes` (PlayerUuid) VALUES (?);"),
+
+        DELETE_ADMIN_MODE("DELETE FROM `%table_prefix%AdminModes` WHERE PlayerUuid = ?;"),
+
+        GET_ADMIN_MODES("SELECT * FROM `%table_prefix%AdminModes`;"),
         ;
 
         private final String statement;
@@ -358,6 +380,9 @@ public final class Statements {
         GET_NETWORK_LINKED_HOPPERS,
         INSERT_PLAYER_PREFERENCE,
         GET_PLAYER_PREFERENCES,
+        INSERT_ADMIN_MODE,
+        DELETE_ADMIN_MODE,
+        GET_ADMIN_MODES,
     }
 
     public static String getStatement(StatementType type, ConnectorSet connectorSet) {

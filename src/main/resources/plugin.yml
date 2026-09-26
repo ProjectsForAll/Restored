@@ -35,3 +35,13 @@ commands:
     description: Get a Restored custom item
     permission: restored.command.rgetitem
     aliases: [rget, restoredgetitem]
+  networkadmin:
+    description: Administer every Restored network on the server
+    usage: /networkadmin <manage (radius)|adminmode|deletemode>
+    permission: restored.command.networkadmin
+    aliases: [nadmin, restoredadmin]
+
+permissions:
+  restored.command.networkadmin:
+    description: Use /networkadmin and its owner-level access to every network
+    default: op

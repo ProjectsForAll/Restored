@@ -21,6 +21,11 @@ public final class NetworkItemSearchPrompt {
     private NetworkItemSearchPrompt() {
     }
 
+    /** True while {@code playerId} is being asked to type a search into chat. */
+    public static boolean isPending(UUID playerId) {
+        return playerId != null && PENDING.containsKey(playerId);
+    }
+
     public static void open(Player player, Consumer<String> result) {
         ensureListener();
         PENDING.put(player.getUniqueId(), result);

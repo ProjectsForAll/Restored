@@ -113,6 +113,17 @@ public class NetworkManageGui extends AbstractInventoryGui {
     }
 
     private void openNetwork() {
+        if (!network.isOwner(player.getUniqueId())
+                && gg.drak.restored.data.AdminAccess.actsAsOwner(player.getUniqueId(), network.getIdentifier())) {
+            // Admins open from anywhere. Linked chests are loaded first so they can be used, and
+            // this menu stays open meanwhile: closing it would end the admin's session access.
+            gg.drak.restored.util.LinkedChestStorage.prepareLinkedChunks(network, player.getUniqueId(), () -> {
+                if (player.isOnline()) {
+                    new NetworkItemsGui(player, network).open();
+                }
+            });
+            return;
+        }
         if (!network.isPlaced()) {
             player.sendMessage(LegacyColors.color("#FF5555This network is not placed."));
             return;
@@ -128,7 +139,7 @@ public class NetworkManageGui extends AbstractInventoryGui {
     }
 
     private void confirmMove() {
-        if (!network.isOwner(player.getUniqueId())) {
+        if (!network.actsAsOwner(player.getUniqueId())) {
             player.sendMessage(LegacyColors.color("#FF5555Only the owner can move this network."));
             return;
         }

@@ -16,6 +16,8 @@ import gg.drak.restored.events.CraftGuardListener;
 import gg.drak.restored.events.FeedingAugmentListener;
 import gg.drak.restored.events.ItemLoreGuardListener;
 import gg.drak.restored.events.LinkedChestCacheListener;
+import gg.drak.restored.commands.NetworkAdminCMD;
+import gg.drak.restored.data.AdminAccess;
 import gg.drak.restored.events.MainListener;
 import gg.drak.restored.events.NetworkHopperListener;
 import gg.drak.restored.events.MagnetPocketAugmentListener;
@@ -69,6 +71,8 @@ public final class Restored extends BetterPlugin {
     @Getter @Setter
     private static LinkedChestCacheListener linkedChestCacheListener;
     @Getter @Setter
+    private static NetworkAdminCMD networkAdminCMD;
+    @Getter @Setter
     private static NetworksCMD networksCMD;
     @Getter @Setter
     private static RRecipesCMD rRecipesCMD;
@@ -103,6 +107,7 @@ public final class Restored extends BetterPlugin {
         getDatabase().ensureDatabase();
         getDatabase().ensureTables();
         PlayerPreferences.init(getDatabase());
+        AdminAccess.init(getDatabase());
 
         NetworkManager.loadAll(getDatabase().loadAllNetworks());
 
@@ -123,6 +128,7 @@ public final class Restored extends BetterPlugin {
         setRRecipesCMD(new RRecipesCMD());
         setRInfoCMD(new RInfoCMD());
         setRGetItemCMD(new RGetItemCMD());
+        setNetworkAdminCMD(new NetworkAdminCMD());
         RestoredItemRegistry.registerWithItemFactory();
         RecipeRegistrar.register();
         setNetworkSaveTimer(new NetworkSaveTimer());

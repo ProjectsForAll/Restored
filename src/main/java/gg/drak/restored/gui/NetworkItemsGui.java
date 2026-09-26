@@ -79,6 +79,11 @@ public class NetworkItemsGui extends PaginatedInventoryGui {
         this.combineStacks = prefs.combineStacks();
     }
 
+    /** True while {@code playerId} is typing a search filter for this menu into chat. */
+    public static boolean isAwaitingSearch(UUID playerId) {
+        return playerId != null && PENDING_CHAT.containsKey(playerId);
+    }
+
     private void savePrefs() {
         NetworkBrowserPrefs.set(player.getUniqueId(), new NetworkBrowserPrefs.State(
                 searchFilter, filterMode, sortMode, sortDirection, combineStacks

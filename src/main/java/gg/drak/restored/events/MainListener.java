@@ -1,7 +1,9 @@
 package gg.drak.restored.events;
 
 import gg.drak.restored.Restored;
+import gg.drak.restored.data.AdminAccess;
 import gg.drak.restored.data.Network;
+import gg.drak.restored.data.NetworkAdmin;
 import gg.drak.restored.data.NetworkManager;
 import gg.drak.restored.gui.NetworkItemsGui;
 import gg.drak.restored.gui.NetworkManageGui;
@@ -83,7 +85,7 @@ public class MainListener implements Listener {
                 event.setCancelled(true);
                 return;
             }
-            if (!network.isOwner(player.getUniqueId())) {
+            if (!network.actsAsOwner(player.getUniqueId())) {
                 player.sendMessage(LegacyColors.color("#FF5555Only the owner can place this network chest."));
                 event.setCancelled(true);
                 return;
@@ -130,7 +132,14 @@ public class MainListener implements Listener {
         Network network = resolveNetwork(block);
         if (network != null) {
             Player player = event.getPlayer();
-            if (!network.isOwner(player.getUniqueId())) {
+            if (AdminAccess.isDeleteMode(player.getUniqueId())) {
+                event.setDropItems(false);
+                NetworkAdmin.delete(network);
+                player.sendMessage(LegacyColors.color("#FF5555Network deleted (delete mode). "
+                        + "Virtual items were destroyed; linked chests were unlinked."));
+                return;
+            }
+            if (!network.actsAsOwner(player.getUniqueId())) {
                 event.setCancelled(true);
                 player.sendMessage(LegacyColors.color("#FF5555Only the owner can break this network chest."));
                 return;

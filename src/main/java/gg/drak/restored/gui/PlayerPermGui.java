@@ -119,7 +119,7 @@ public class PlayerPermGui extends AbstractInventoryGui {
         }
 
         if ("transfer".equals(key)) {
-            if (!network.isOwner(player.getUniqueId())) {
+            if (!network.actsAsOwner(player.getUniqueId())) {
                 player.sendMessage(LegacyColors.color("#FF5555Only the owner can transfer ownership."));
                 return;
             }
