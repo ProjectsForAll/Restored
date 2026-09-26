@@ -15,6 +15,7 @@ import gg.drak.restored.events.CompactorAugmentListener;
 import gg.drak.restored.events.CraftGuardListener;
 import gg.drak.restored.events.FeedingAugmentListener;
 import gg.drak.restored.events.ItemLoreGuardListener;
+import gg.drak.restored.events.LinkedChestCacheListener;
 import gg.drak.restored.events.MainListener;
 import gg.drak.restored.events.NetworkHopperListener;
 import gg.drak.restored.events.MagnetPocketAugmentListener;
@@ -22,6 +23,8 @@ import gg.drak.restored.events.PocketLinkListener;
 import gg.drak.restored.events.QuiverAugmentListener;
 import gg.drak.restored.events.RocketDistributerAugmentListener;
 import gg.drak.restored.gui.GuiListener;
+import gg.drak.restored.util.ChunkTickets;
+import gg.drak.restored.util.LinkedChestCache;
 import gg.drak.restored.gui.NetworkBrowserPrefs;
 import gg.drak.restored.items.RestoredItemRegistry;
 import gg.drak.restored.recipes.RecipeRegistrar;
@@ -64,6 +67,8 @@ public final class Restored extends BetterPlugin {
     @Getter @Setter
     private static CompactorAugmentListener compactorAugmentListener;
     @Getter @Setter
+    private static LinkedChestCacheListener linkedChestCacheListener;
+    @Getter @Setter
     private static NetworksCMD networksCMD;
     @Getter @Setter
     private static RRecipesCMD rRecipesCMD;
@@ -89,6 +94,8 @@ public final class Restored extends BetterPlugin {
         setInstance(this);
 
         setMainConfig(new MainConfig());
+        // Read before networks load: loading their links is what pins the chunks.
+        LinkedChestCache.setKeepChunksLoaded(getMainConfig().isLinkedChestKeepChunksLoaded());
         setDatabaseConfig(new DatabaseConfig());
         setRecipesConfig(new RecipesConfig());
         NetworkBrowserPrefs.init();
@@ -111,6 +118,7 @@ public final class Restored extends BetterPlugin {
         setCraftGuardListener(new CraftGuardListener());
         setItemLoreGuardListener(new ItemLoreGuardListener());
         setGuiListener(new GuiListener());
+        setLinkedChestCacheListener(new LinkedChestCacheListener());
         setNetworksCMD(new NetworksCMD());
         setRRecipesCMD(new RRecipesCMD());
         setRInfoCMD(new RInfoCMD());
@@ -126,6 +134,8 @@ public final class Restored extends BetterPlugin {
         // Snapshot dirty networks on the shutdown thread, then block until DB writes finish.
         NetworkManager.saveAllDirty();
         getDatabase().getMiddleware().flush();
+        ChunkTickets.releaseAll();
+        LinkedChestCache.clear();
     }
 
     public ConcurrentSkipListMap<String, Player> getOnlinePlayers() {

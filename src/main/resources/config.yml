@@ -1,3 +1,10 @@
 # Maximum distance, in blocks, between a network chest and linked chests/hoppers.
 # Set to -1 to allow linked storage at any distance in the same world.
 linked-chest-max-distance: 64
+
+# Keep the chunks that contain linked chests/barrels loaded while they are linked, so the
+# network can always pull from and push to them. Those chunks keep ticking (entities, redstone,
+# hoppers) like a /forceload'ed chunk; with an unlimited link distance that cost is unbounded.
+# When false, linked chests in unloaded chunks still show their last known contents but can
+# only be used while something else keeps their chunk loaded.
+linked-chest-keep-chunks-loaded: true

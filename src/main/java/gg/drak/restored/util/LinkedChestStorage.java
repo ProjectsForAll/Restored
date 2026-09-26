@@ -12,7 +12,9 @@ import org.bukkit.Material;
 import org.bukkit.World;
 import org.bukkit.block.Block;
 import org.bukkit.block.BlockFace;
+import org.bukkit.block.BlockState;
 import org.bukkit.block.Container;
+import org.bukkit.block.TileState;
 import org.bukkit.block.data.type.Chest;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
@@ -23,8 +25,13 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Live inventory access for chests linked to a network.
- * Contents are not DB-persisted — only link locations are.
+ * Access to chests and barrels linked to a network. Contents are not DB-persisted — only link
+ * locations are.
+ *
+ * <p>Reads (listings, amounts, free-space checks) are answered from {@link LinkedChestCache},
+ * which also covers chests whose chunks are not loaded. Inserts and extractions always act on
+ * the live inventory, and only on chests the current thread can touch, so a stale snapshot can
+ * make an operation move less than hoped but can never duplicate or lose items.
  */
 public final class LinkedChestStorage {
 
@@ -39,6 +46,14 @@ public final class LinkedChestStorage {
         return location != null
                 && location.getWorld() != null
                 && location.getWorld().isChunkLoaded(location.getBlockX() >> 4, location.getBlockZ() >> 4);
+    }
+
+    /**
+     * True when the block at {@code location} is loaded and owned by the current thread — the
+     * main thread on Paper, the owning region thread on Folia.
+     */
+    static boolean canTouch(Location location) {
+        return isChunkLoaded(location) && Bukkit.isOwnedByCurrentRegion(location);
     }
 
     public static Location parseLocationKey(String key) {
@@ -101,19 +116,26 @@ public final class LinkedChestStorage {
     }
 
     public static Block otherHalf(Block block, Chest chestData) {
-        BlockFace facing = chestData.getFacing();
-        BlockFace offset = switch (facing) {
+        BlockFace offset = otherHalfFace(chestData);
+        if (offset == null) {
+            return null;
+        }
+        Block other = block.getRelative(offset);
+        return other.getType() == Material.CHEST ? other : null;
+    }
+
+    /** Direction from one half of a double chest to the other, or null for a single chest. */
+    private static BlockFace otherHalfFace(Chest chestData) {
+        if (chestData.getType() == Chest.Type.SINGLE) {
+            return null;
+        }
+        return switch (chestData.getFacing()) {
             case NORTH -> chestData.getType() == Chest.Type.LEFT ? BlockFace.EAST : BlockFace.WEST;
             case SOUTH -> chestData.getType() == Chest.Type.LEFT ? BlockFace.WEST : BlockFace.EAST;
             case EAST -> chestData.getType() == Chest.Type.LEFT ? BlockFace.SOUTH : BlockFace.NORTH;
             case WEST -> chestData.getType() == Chest.Type.LEFT ? BlockFace.NORTH : BlockFace.SOUTH;
             default -> null;
         };
-        if (offset == null) {
-            return null;
-        }
-        Block other = block.getRelative(offset);
-        return other.getType() == Material.CHEST ? other : null;
     }
 
     public static boolean isWithinLinkRange(Network network, Location chestLocation) {
@@ -174,68 +196,202 @@ public final class LinkedChestStorage {
         return maxDistance == -1 ? "any distance" : maxDistance + " blocks";
     }
 
-    public static List<Inventory> resolveInventories(Network network) {
-        List<Inventory> inventories = new ArrayList<>();
-        // Double chests resolve to the same Inventory from either half; dedupe by identity
-        // instead of List.contains, which is O(n^2) and calls Inventory.equals per link.
-        java.util.Set<Inventory> seen = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
-        if (network == null) {
-            return inventories;
-        }
-        List<String> keys = new ArrayList<>(network.getLinkedChestKeys());
-        List<String> dead = new ArrayList<>();
-        for (String key : keys) {
-            Location location = parseLocationKey(key);
-            if (location == null || location.getWorld() == null) {
-                continue;
-            }
-            // Never touch a block in an unloaded chunk. location.getBlock() would force a
-            // synchronous chunk load on the main thread, and the resulting AIR read would
-            // fall through to the dead-link path below and silently unlink a real chest.
-            if (!isChunkLoaded(location)) {
-                continue;
-            }
-            Block block = location.getBlock();
-            if (!isSupportedStorage(block) || NetworkHopperStorage.isHopper(block)) {
-                dead.add(key);
-                continue;
-            }
-            Block canonical = canonicalStorageBlock(block);
-            if (canonical == null) {
-                dead.add(key);
-                continue;
-            }
-            String canonicalKey = NetworkManager.locationKey(canonical.getLocation());
-            if (!canonicalKey.equals(key)) {
-                dead.add(key);
-                if (!network.hasLinkedChestKey(canonicalKey)) {
-                    network.addLinkedChest(
-                            canonical.getWorld().getName(),
-                            canonical.getX(),
-                            canonical.getY(),
-                            canonical.getZ()
-                    );
-                    NetworkBlockTags.setLinkedNetworkId(canonical, network.getIdentifier());
-                }
-                NetworkBlockTags.clearLinkedNetworkId(block);
-            }
-            if (!(canonical.getState() instanceof Container container)) {
-                continue;
-            }
-            Inventory inventory = container.getInventory();
-            if (seen.add(inventory)) {
-                inventories.add(inventory);
-            }
-        }
-        for (String key : dead) {
-            network.removeLinkedChestKey(key);
-        }
-        return inventories;
+    // ------------------------------------------------------------------------------------------
+    // Live resolution
+    // ------------------------------------------------------------------------------------------
+
+    /** A linked chest this thread may modify right now, under its canonical key. */
+    private record LiveChest(String key, Inventory inventory, int blockCount) {
     }
 
     /**
-     * Number of linked locations whose chunk is not currently loaded, and whose contents are
-     * therefore invisible to {@link #resolveInventories(Network)}.
+     * Resolves a linked key to its live inventory and repairs the link on the way: a location
+     * that no longer holds supported storage is added to {@code dead}, and a link recorded on
+     * the right half of a double chest moves to the canonical left half.
+     *
+     * @return null when the chest is gone, or is not currently loaded and owned by this thread.
+     */
+    private static LiveChest resolveLive(Network network, String key, List<String> dead) {
+        Location location = parseLocationKey(key);
+        // Never touch a block in an unloaded chunk: getBlock() would force a synchronous chunk
+        // load, and on Folia a chunk owned by another region cannot be read at all.
+        if (location == null || !canTouch(location)) {
+            return null;
+        }
+        Block block = location.getBlock();
+        // Resolving the other half of a double chest reads the neighbouring block, and the
+        // double inventory reads it too; both would load that chunk synchronously.
+        if (!partnerReachable(block)) {
+            return null;
+        }
+        Block canonical = canonicalStorageBlock(block);
+        if (canonical == null) {
+            dead.add(key);
+            return null;
+        }
+        String canonicalKey = key;
+        if (canonical != block) {
+            if (NetworkHopperStorage.isHopper(block)) {
+                dead.add(key);
+                return null;
+            }
+            canonicalKey = NetworkManager.locationKey(canonical.getLocation());
+            dead.add(key);
+            if (!network.hasLinkedChestKey(canonicalKey)) {
+                network.addLinkedChest(
+                        canonical.getWorld().getName(),
+                        canonical.getX(),
+                        canonical.getY(),
+                        canonical.getZ()
+                );
+                NetworkBlockTags.setLinkedNetworkId(canonical, network.getIdentifier());
+            }
+            NetworkBlockTags.clearLinkedNetworkId(block);
+            if (!canTouch(canonical.getLocation())) {
+                return null;
+            }
+        }
+        // Non-snapshot state: reads the live tile entity instead of copying the whole inventory.
+        BlockState state = canonical.getState(false);
+        if (state instanceof TileState tile && NetworkBlockTags.getHopperRole(tile).isPresent()) {
+            dead.add(canonicalKey);
+            return null;
+        }
+        if (!(state instanceof Container container)) {
+            return null;
+        }
+        int blockCount = 1;
+        if (canonical.getBlockData() instanceof Chest chestData) {
+            BlockFace face = otherHalfFace(chestData);
+            if (face != null) {
+                blockCount = 2;
+                int partnerX = canonical.getX() + face.getModX();
+                int partnerZ = canonical.getZ() + face.getModZ();
+                LinkedChestCache.holdPartnerChunk(
+                        canonicalKey, canonical.getWorld(), partnerX >> 4, partnerZ >> 4);
+            }
+        }
+        return new LiveChest(canonicalKey, container.getInventory(), blockCount);
+    }
+
+    /**
+     * False when {@code block} is half of a double chest whose other half sits in a chunk this
+     * thread cannot touch. Single chests, barrels and other blocks are always reachable.
+     */
+    private static boolean partnerReachable(Block block) {
+        if (block.getType() != Material.CHEST || !(block.getBlockData() instanceof Chest chestData)) {
+            return true;
+        }
+        BlockFace face = otherHalfFace(chestData);
+        if (face == null) {
+            return true;
+        }
+        return canTouch(block.getLocation().add(face.getModX(), 0, face.getModZ()));
+    }
+
+    private static void removeDead(Network network, List<String> dead) {
+        for (String key : dead) {
+            network.removeLinkedChestKey(key);
+        }
+    }
+
+    /**
+     * Snapshot of a linked chest as its chunk unloads. Read-only: links are never repaired from
+     * here, because the owning network is not known and the block is about to disappear.
+     */
+    static void snapshotUnloading(org.bukkit.Chunk chunk, String key) {
+        Location location = parseLocationKey(key);
+        if (location == null) {
+            return;
+        }
+        // Read through the event's chunk: it is still accessible while unloading, even where
+        // World#isChunkLoaded may already report it as gone.
+        Block block = chunk.getBlock(location.getBlockX() & 15, location.getBlockY(), location.getBlockZ() & 15);
+        Material type = block.getType();
+        int blockCount = 1;
+        if (type == Material.CHEST && block.getBlockData() instanceof Chest chestData) {
+            if (chestData.getType() == Chest.Type.RIGHT) {
+                return;
+            }
+            BlockFace face = otherHalfFace(chestData);
+            if (face != null) {
+                int partnerX = block.getX() + face.getModX();
+                int partnerZ = block.getZ() + face.getModZ();
+                boolean sameChunk = partnerX >> 4 == chunk.getX() && partnerZ >> 4 == chunk.getZ();
+                // A partner half in a neighbouring chunk that is not loaded would be loaded again
+                // by reading the double inventory.
+                if (!sameChunk && !block.getWorld().isChunkLoaded(partnerX >> 4, partnerZ >> 4)) {
+                    return;
+                }
+                blockCount = 2;
+            }
+        } else if (type != Material.BARREL) {
+            return;
+        }
+        if (!(block.getState(false) instanceof Container container)) {
+            return;
+        }
+        LinkedChestCache.store(key, container.getInventory(), blockCount);
+    }
+
+    /** One linked chest's contents as seen by readers. */
+    private record LinkedView(String key, LinkedChestCache.Snapshot snapshot, boolean live) {
+    }
+
+    /**
+     * Every linked chest of {@code network} with its best-known contents. Fresh cached snapshots
+     * are used as-is; stale ones are rebuilt when the chest can be touched, and otherwise the last
+     * snapshot stands in (exact for unloaded chunks, since nothing changes there). A chest with no
+     * snapshot yet appears with a null snapshot.
+     */
+    private static List<LinkedView> views(Network network) {
+        List<LinkedView> views = new ArrayList<>();
+        if (network == null) {
+            return views;
+        }
+        Map<String, LinkedView> byKey = new LinkedHashMap<>();
+        List<String> dead = new ArrayList<>();
+        for (String key : new ArrayList<>(network.getLinkedChestKeys())) {
+            if (byKey.containsKey(key)) {
+                continue;
+            }
+            Location location = parseLocationKey(key);
+            boolean touchable = location != null && canTouch(location);
+            if (LinkedChestCache.isFresh(key)) {
+                byKey.put(key, new LinkedView(key, LinkedChestCache.snapshot(key), touchable));
+                continue;
+            }
+            if (!touchable) {
+                byKey.put(key, new LinkedView(key, LinkedChestCache.snapshot(key), false));
+                continue;
+            }
+            LiveChest live = resolveLive(network, key, dead);
+            if (live == null) {
+                if (!dead.contains(key)) {
+                    byKey.put(key, new LinkedView(key, LinkedChestCache.snapshot(key), false));
+                }
+                continue;
+            }
+            // A migrated link resolves under its canonical key, which the loop may also visit.
+            if (byKey.containsKey(live.key())) {
+                continue;
+            }
+            LinkedChestCache.Snapshot snapshot =
+                    LinkedChestCache.store(live.key(), live.inventory(), live.blockCount());
+            byKey.put(live.key(), new LinkedView(live.key(), snapshot, true));
+        }
+        removeDead(network, dead);
+        for (LinkedView view : byKey.values()) {
+            if (!dead.contains(view.key())) {
+                views.add(view);
+            }
+        }
+        return views;
+    }
+
+    /**
+     * Number of linked locations whose contents are unknown: not loaded and never seen since the
+     * server started. Their items are missing from every listing until the chunk loads once.
      */
     public static int countUnavailableLinks(Network network) {
         if (network == null) {
@@ -244,44 +400,50 @@ public final class LinkedChestStorage {
         int unavailable = 0;
         for (String key : network.getLinkedChestKeys()) {
             Location location = parseLocationKey(key);
-            if (location == null || location.getWorld() == null || !isChunkLoaded(location)) {
+            if (location == null) {
+                unavailable++;
+            } else if (LinkedChestCache.snapshot(key) == null && !canTouch(location)) {
                 unavailable++;
             }
         }
         return unavailable;
     }
 
+    // ------------------------------------------------------------------------------------------
+    // Chunk leases for remote browsing
+    // ------------------------------------------------------------------------------------------
+
     /**
-     * Plugin chunk tickets held so a network's linked chests stay loaded while a player browses
-     * the network from afar. Leases are keyed by player rather than by GUI instance: navigating
-     * to a sub-menu or opening the chat search prompt closes the current inventory, and a
-     * GUI-scoped lease would be dropped there — letting the chunks unload and making the items
-     * disappear again partway through the session.
+     * Chunks held loaded so a network's linked chests stay writable while a player browses the
+     * network from afar. Leases are keyed by player rather than by GUI instance: navigating to a
+     * sub-menu or opening the chat search prompt closes the current inventory, and a GUI-scoped
+     * lease would be dropped there — letting the chunks unload partway through the session.
      */
     public static final class LinkedChunkLease {
-        private final Map<World, List<long[]>> ticketed = new LinkedHashMap<>();
+        private final List<Object[]> held = new ArrayList<>();
         private boolean released;
 
-        private void hold(World world, int chunkX, int chunkZ) {
-            if (world == null) {
-                return;
+        private synchronized boolean hold(World world, int chunkX, int chunkZ) {
+            if (released || world == null) {
+                return false;
             }
-            world.addPluginChunkTicket(chunkX, chunkZ, Restored.getInstance());
-            ticketed.computeIfAbsent(world, w -> new ArrayList<>()).add(new long[]{chunkX, chunkZ});
+            held.add(new Object[]{world, chunkX, chunkZ});
+            return true;
         }
 
         public void release() {
-            if (released) {
-                return;
-            }
-            released = true;
-            for (Map.Entry<World, List<long[]>> entry : ticketed.entrySet()) {
-                for (long[] chunk : entry.getValue()) {
-                    entry.getKey().removePluginChunkTicket(
-                            (int) chunk[0], (int) chunk[1], Restored.getInstance());
+            List<Object[]> toRelease;
+            synchronized (this) {
+                if (released) {
+                    return;
                 }
+                released = true;
+                toRelease = new ArrayList<>(held);
+                held.clear();
             }
-            ticketed.clear();
+            for (Object[] chunk : toRelease) {
+                ChunkTickets.release((World) chunk[0], (int) chunk[1], (int) chunk[2]);
+            }
         }
     }
 
@@ -308,9 +470,8 @@ public final class LinkedChestStorage {
     /**
      * Loads every linked chest's chunk and keeps it loaded for {@code playerId}, then runs
      * {@code afterLoad} on a thread that may touch them. Views opened away from the network (the
-     * Pocket Link) use this so linked-chest contents are actually visible; without it
-     * {@link #resolveInventories(Network)} silently skips unloaded chunks and the network appears
-     * to be missing most of its items.
+     * Pocket Link) use this so withdrawals and deposits can reach every linked chest; the cache
+     * alone can list their contents but never modifies an unloaded chest.
      *
      * <p>Chunk loading is asynchronous, so the main thread is never stalled. {@code afterLoad}
      * always runs exactly once, even when some chunks fail to load. Any lease the player already
@@ -336,7 +497,7 @@ public final class LinkedChestStorage {
             return;
         }
         LinkedChunkLease lease = new LinkedChunkLease();
-        // Links may legitimately span worlds, so tickets are grouped per world rather than
+        // Links may legitimately span worlds, so chunks are identified per world rather than
         // assuming every chunk coordinate belongs to the first link's world.
         java.util.Set<String> seenChunks = new java.util.HashSet<>();
         List<java.util.concurrent.CompletableFuture<?>> futures = new ArrayList<>();
@@ -347,10 +508,10 @@ public final class LinkedChestStorage {
             if (!seenChunks.add(world.getName() + ':' + chunkX + ':' + chunkZ)) {
                 continue;
             }
-            // Load first, ticket in the callback: addPluginChunkTicket can load synchronously,
-            // and ticketing every chunk up front would stall the main thread on a single click.
-            futures.add(PlatformScheduler.loadChunk(location)
-                    .thenRun(() -> lease.hold(world, chunkX, chunkZ)));
+            // The reference is recorded before the async load finishes, so releasing the lease
+            // early still balances every acquire.
+            lease.hold(world, chunkX, chunkZ);
+            futures.add(ChunkTickets.acquire(world, chunkX, chunkZ));
         }
         Location anchor = linked.get(0);
         java.util.concurrent.CompletableFuture
@@ -372,41 +533,58 @@ public final class LinkedChestStorage {
                 }));
     }
 
+    // ------------------------------------------------------------------------------------------
+    // Writes (live inventories only)
+    // ------------------------------------------------------------------------------------------
+
     public static long insertIntoLinked(Network network, ItemStack stack, long amount) {
         if (network == null || stack == null || stack.getType().isAir() || amount <= 0) {
             return 0;
         }
-        return insertIntoLinked(resolveInventories(network), stack, amount);
-    }
-
-    public static long insertIntoLinked(List<Inventory> inventories, ItemStack stack, long amount) {
-        if (stack == null || stack.getType().isAir() || amount <= 0) {
-            return 0;
-        }
+        String itemKey = StoredStack.itemKey(stack);
         long remaining = amount;
         long inserted = 0;
-        for (Inventory inventory : inventories) {
+        List<String> dead = new ArrayList<>();
+        for (LinkedView view : views(network)) {
             if (remaining <= 0) {
                 break;
             }
-            while (remaining > 0) {
-                int batch = (int) Math.min(remaining, stack.getMaxStackSize());
-                ItemStack toAdd = stack.clone();
-                toAdd.setAmount(batch);
-                Map<Integer, ItemStack> leftover = inventory.addItem(toAdd);
-                int placed = batch;
-                if (!leftover.isEmpty()) {
-                    ItemStack left = leftover.values().iterator().next();
-                    placed = batch - left.getAmount();
-                }
-                if (placed <= 0) {
-                    break;
-                }
-                inserted += placed;
-                remaining -= placed;
-                if (!leftover.isEmpty()) {
-                    break;
-                }
+            if (!view.live() || view.snapshot() == null || !view.snapshot().hasRoomFor(itemKey)) {
+                continue;
+            }
+            LiveChest live = resolveLive(network, view.key(), dead);
+            if (live == null) {
+                continue;
+            }
+            long placed = addToInventory(live.inventory(), stack, remaining);
+            LinkedChestCache.store(live.key(), live.inventory(), live.blockCount());
+            inserted += placed;
+            remaining -= placed;
+        }
+        removeDead(network, dead);
+        return inserted;
+    }
+
+    private static long addToInventory(Inventory inventory, ItemStack stack, long amount) {
+        long remaining = amount;
+        long inserted = 0;
+        while (remaining > 0) {
+            int batch = (int) Math.min(remaining, stack.getMaxStackSize());
+            ItemStack toAdd = stack.clone();
+            toAdd.setAmount(batch);
+            Map<Integer, ItemStack> leftover = inventory.addItem(toAdd);
+            int placed = batch;
+            if (!leftover.isEmpty()) {
+                ItemStack left = leftover.values().iterator().next();
+                placed = batch - left.getAmount();
+            }
+            if (placed <= 0) {
+                break;
+            }
+            inserted += placed;
+            remaining -= placed;
+            if (!leftover.isEmpty()) {
+                break;
             }
         }
         return inserted;
@@ -416,96 +594,124 @@ public final class LinkedChestStorage {
         if (network == null || itemKey == null || amount <= 0) {
             return 0;
         }
-        return extractFromLinked(resolveInventories(network), itemKey, amount);
-    }
-
-    public static long extractFromLinked(List<Inventory> inventories, String itemKey, long amount) {
-        return extractFromLinked(inventories, itemKey, amount, null);
-    }
-
-    /**
-     * @param keyMaterial Material {@code itemKey} refers to, when the caller knows it. Used only
-     *                    to reject slots without hashing; null simply disables that shortcut.
-     */
-    public static long extractFromLinked(
-            List<Inventory> inventories, String itemKey, long amount, Material keyMaterial) {
-        if (itemKey == null || amount <= 0) {
-            return 0;
-        }
         long remaining = amount;
         long taken = 0;
-        for (Inventory inventory : inventories) {
+        List<String> dead = new ArrayList<>();
+        for (LinkedView view : views(network)) {
             if (remaining <= 0) {
                 break;
             }
-            ItemStack[] contents = inventory.getContents();
-            for (int i = 0; i < contents.length && remaining > 0; i++) {
-                ItemStack slot = contents[i];
-                if (slot == null || slot.getType().isAir()
-                        || PersistedItemCodec.cannotMatch(slot, keyMaterial)) {
-                    continue;
-                }
-                if (!itemKey.equals(StoredStack.itemKey(slot))) {
-                    continue;
-                }
-                int remove = (int) Math.min(remaining, slot.getAmount());
-                int left = slot.getAmount() - remove;
-                if (left <= 0) {
-                    inventory.setItem(i, null);
-                } else {
-                    ItemStack copy = slot.clone();
-                    copy.setAmount(left);
-                    inventory.setItem(i, copy);
-                }
-                taken += remove;
-                remaining -= remove;
+            if (!view.live() || view.snapshot() == null || view.snapshot().amount(itemKey) <= 0) {
+                continue;
             }
+            LiveChest live = resolveLive(network, view.key(), dead);
+            if (live == null) {
+                continue;
+            }
+            StoredStack cached = view.snapshot().totals().get(itemKey);
+            Material keyMaterial = cached == null || cached.getTemplate() == null
+                    ? null : cached.getTemplate().getType();
+            long removed = removeFromInventory(live, itemKey, remaining, keyMaterial);
+            LinkedChestCache.store(live.key(), live.inventory(), live.blockCount());
+            taken += removed;
+            remaining -= removed;
+        }
+        removeDead(network, dead);
+        return taken;
+    }
+
+    private static long removeFromInventory(LiveChest live, String itemKey, long amount, Material keyMaterial) {
+        Inventory inventory = live.inventory();
+        long remaining = amount;
+        long taken = 0;
+        ItemStack[] contents = inventory.getContents();
+        for (int i = 0; i < contents.length && remaining > 0; i++) {
+            ItemStack slot = contents[i];
+            if (slot == null || slot.getType().isAir()
+                    || PersistedItemCodec.cannotMatch(slot, keyMaterial)) {
+                continue;
+            }
+            if (!itemKey.equals(LinkedChestCache.keyAt(live.key(), i, slot))) {
+                continue;
+            }
+            int remove = (int) Math.min(remaining, slot.getAmount());
+            int left = slot.getAmount() - remove;
+            if (left <= 0) {
+                inventory.setItem(i, null);
+            } else {
+                ItemStack copy = slot.clone();
+                copy.setAmount(left);
+                inventory.setItem(i, copy);
+            }
+            taken += remove;
+            remaining -= remove;
         }
         return taken;
     }
 
-    public static Map<String, StoredStack> aggregateLinkedByKey(Network network) {
-        Map<String, StoredStack> aggregated = new LinkedHashMap<>();
-        if (network == null) {
-            return aggregated;
-        }
-        return aggregateLinkedByKey(resolveInventories(network));
-    }
+    // ------------------------------------------------------------------------------------------
+    // Reads (served from the cache)
+    // ------------------------------------------------------------------------------------------
 
-    public static Map<String, StoredStack> aggregateLinkedByKey(List<Inventory> inventories) {
-        return aggregateLinkedByKey(inventories, null);
+    public static Map<String, StoredStack> aggregateLinkedByKey(Network network) {
+        return aggregateLinkedByKey(network, null);
     }
 
     /**
-     * @param accept optional Material test applied before hashing. Callers that only care about
-     *               one family of items (arrows, food, rockets) pass it so the SHA-256 in
-     *               {@link StoredStack#itemKey} is never computed for slots they would discard.
+     * Linked contents merged by item key. Every returned stack is a fresh object the caller may
+     * modify.
+     *
+     * @param accept optional Material test; callers that only care about one family of items
+     *               (arrows, food, rockets) pass it to skip everything else.
      */
     public static Map<String, StoredStack> aggregateLinkedByKey(
-            List<Inventory> inventories, java.util.function.Predicate<Material> accept) {
+            Network network, java.util.function.Predicate<Material> accept) {
         Map<String, StoredStack> aggregated = new LinkedHashMap<>();
-        for (Inventory inventory : inventories) {
-            for (ItemStack slot : inventory.getContents()) {
-                if (slot == null || slot.getType().isAir()
-                        || (accept != null && !accept.test(slot.getType()))) {
+        for (LinkedView view : views(network)) {
+            if (view.snapshot() == null) {
+                continue;
+            }
+            for (Map.Entry<String, StoredStack> entry : view.snapshot().totals().entrySet()) {
+                StoredStack cached = entry.getValue();
+                if (accept != null && (cached.getTemplate() == null || !accept.test(cached.getTemplate().getType()))) {
                     continue;
                 }
-                String key = StoredStack.itemKey(slot);
-                StoredStack existing = aggregated.get(key);
+                StoredStack existing = aggregated.get(entry.getKey());
                 if (existing == null) {
-                    aggregated.put(key, new StoredStack(slot, slot.getAmount()));
+                    StoredStack copy = new StoredStack(cached.getTemplate(), cached.getAmount());
+                    copy.setCachedItemKey(entry.getKey());
+                    aggregated.put(entry.getKey(), copy);
                 } else {
-                    existing.setAmount(existing.getAmount() + slot.getAmount());
+                    existing.setAmount(existing.getAmount() + cached.getAmount());
                 }
             }
         }
         return aggregated;
     }
 
+    /**
+     * Item key → amount held in linked chests that can be extracted from right now, for callers
+     * checking many keys at once.
+     */
+    public static Map<String, Long> linkedAmounts(Network network) {
+        Map<String, Long> amounts = new java.util.HashMap<>();
+        for (LinkedView view : views(network)) {
+            if (!view.live() || view.snapshot() == null) {
+                continue;
+            }
+            for (Map.Entry<String, StoredStack> entry : view.snapshot().totals().entrySet()) {
+                amounts.merge(entry.getKey(), entry.getValue().getAmount(), Long::sum);
+            }
+        }
+        return amounts;
+    }
+
     public static long countLinkedItems(Network network) {
         long total = 0;
-        for (StoredStack stack : aggregateLinkedByKey(network).values()) {
-            total += stack.getAmount();
+        for (LinkedView view : views(network)) {
+            if (view.snapshot() != null) {
+                total += view.snapshot().totalItems();
+            }
         }
         return total;
     }
@@ -528,34 +734,16 @@ public final class LinkedChestStorage {
     }
 
     /**
-     * Counts physical chest blocks for display. A double chest counts as 2.
-     * Missing/unloaded links still count as 1 for the stored location.
+     * Counts physical chest blocks for display. A double chest counts as 2. Links whose block
+     * has never been seen count as 1 for the stored location.
      */
     public static int countLinkedChestBlocks(Network network) {
         if (network == null) {
             return 0;
         }
         int total = 0;
-        for (String key : network.getLinkedChestKeys()) {
-            Location location = parseLocationKey(key);
-            if (location == null || location.getWorld() == null) {
-                total += 1;
-                continue;
-            }
-            Block block = location.getBlock();
-            if (block.getType() == Material.BARREL) {
-                total += 1;
-                continue;
-            }
-            if (block.getType() != Material.CHEST || !(block.getBlockData() instanceof Chest chestData)) {
-                total += 1;
-                continue;
-            }
-            if (chestData.getType() == Chest.Type.SINGLE) {
-                total += 1;
-            } else {
-                total += 2;
-            }
+        for (LinkedView view : views(network)) {
+            total += view.snapshot() == null ? 1 : view.snapshot().blockCount();
         }
         return total;
     }
@@ -564,28 +752,10 @@ public final class LinkedChestStorage {
         if (network == null || itemKey == null) {
             return 0;
         }
-        return extractableAmount(resolveInventories(network), itemKey);
-    }
-
-    public static long extractableAmount(List<Inventory> inventories, String itemKey) {
-        return extractableAmount(inventories, itemKey, null);
-    }
-
-    /** @param keyMaterial see {@link #extractFromLinked(List, String, long, Material)}. */
-    public static long extractableAmount(List<Inventory> inventories, String itemKey, Material keyMaterial) {
-        if (itemKey == null) {
-            return 0;
-        }
         long total = 0;
-        for (Inventory inventory : inventories) {
-            for (ItemStack slot : inventory.getContents()) {
-                if (slot == null || slot.getType().isAir()
-                        || PersistedItemCodec.cannotMatch(slot, keyMaterial)) {
-                    continue;
-                }
-                if (itemKey.equals(StoredStack.itemKey(slot))) {
-                    total += slot.getAmount();
-                }
+        for (LinkedView view : views(network)) {
+            if (view.live() && view.snapshot() != null) {
+                total += view.snapshot().amount(itemKey);
             }
         }
         return total;
@@ -595,35 +765,24 @@ public final class LinkedChestStorage {
         if (network == null || itemKey == null) {
             return null;
         }
-        return findTemplate(resolveInventories(network), itemKey);
-    }
-
-    public static ItemStack findTemplate(List<Inventory> inventories, String itemKey) {
-        if (itemKey == null) {
-            return null;
-        }
-        for (Inventory inventory : inventories) {
-            for (ItemStack slot : inventory.getContents()) {
-                if (slot == null || slot.getType().isAir()) {
-                    continue;
-                }
-                if (itemKey.equals(StoredStack.itemKey(slot))) {
-                    ItemStack template = slot.clone();
-                    template.setAmount(1);
-                    return template;
-                }
+        for (LinkedView view : views(network)) {
+            if (view.snapshot() == null) {
+                continue;
+            }
+            StoredStack cached = view.snapshot().totals().get(itemKey);
+            if (cached != null && cached.getTemplate() != null) {
+                ItemStack template = cached.getTemplate().clone();
+                template.setAmount(1);
+                return template;
             }
         }
         return null;
     }
 
-    /** True if any linked chest has at least one empty slot. */
+    /** True if any reachable linked chest has at least one empty slot. */
     public static boolean hasAnyFreeSlot(Network network) {
-        if (network == null) {
-            return false;
-        }
-        for (Inventory inventory : resolveInventories(network)) {
-            if (inventory.firstEmpty() >= 0) {
+        for (LinkedView view : views(network)) {
+            if (view.live() && view.snapshot() != null && view.snapshot().emptySlots() > 0) {
                 return true;
             }
         }
@@ -634,27 +793,10 @@ public final class LinkedChestStorage {
         if (network == null || stack == null || stack.getType().isAir()) {
             return false;
         }
-        return hasLinkedSpace(resolveInventories(network), stack);
-    }
-
-    public static boolean hasLinkedSpace(List<Inventory> inventories, ItemStack stack) {
-        if (stack == null || stack.getType().isAir()) {
-            return false;
-        }
         String key = StoredStack.itemKey(stack);
-        Material keyMaterial = stack.getType();
-        for (Inventory inventory : inventories) {
-            if (inventory.firstEmpty() >= 0) {
+        for (LinkedView view : views(network)) {
+            if (view.live() && view.snapshot() != null && view.snapshot().hasRoomFor(key)) {
                 return true;
-            }
-            for (ItemStack slot : inventory.getContents()) {
-                if (slot == null || slot.getType().isAir()
-                        || PersistedItemCodec.cannotMatch(slot, keyMaterial)) {
-                    continue;
-                }
-                if (key.equals(StoredStack.itemKey(slot)) && slot.getAmount() < slot.getMaxStackSize()) {
-                    return true;
-                }
             }
         }
         return false;

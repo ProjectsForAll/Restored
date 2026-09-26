@@ -64,9 +64,8 @@ public final class NetworkHopperStorage {
         if (hoppers.inputs().isEmpty() && hoppers.outputs().isEmpty()) {
             return;
         }
-        List<Inventory> linkedInventories = LinkedChestStorage.resolveInventories(network);
-        processInputs(network, hoppers.inputs(), linkedInventories);
-        processOutputs(network, hoppers.outputs(), linkedInventories);
+        processInputs(network, hoppers.inputs());
+        processOutputs(network, hoppers.outputs());
     }
 
     public static void setRole(Block block, NetworkHopperRole role) {
@@ -110,14 +109,10 @@ public final class NetworkHopperStorage {
 
     public static void processInputs(Network network) {
         HopperInventories hoppers = resolveHopperInventories(network);
-        processInputs(network, hoppers.inputs(), LinkedChestStorage.resolveInventories(network));
+        processInputs(network, hoppers.inputs());
     }
 
-    private static void processInputs(
-            Network network,
-            List<HopperInventory> hoppers,
-            List<Inventory> linkedInventories
-    ) {
+    private static void processInputs(Network network, List<HopperInventory> hoppers) {
         for (HopperInventory hopper : hoppers) {
             Inventory inventory = hopper.inventory();
             ItemStack[] contents = inventory.getContents();
@@ -126,7 +121,7 @@ public final class NetworkHopperStorage {
                 if (stack == null || stack.getType().isAir()) {
                     continue;
                 }
-                long inserted = network.insert(stack, stack.getAmount(), linkedInventories);
+                long inserted = network.insert(stack, stack.getAmount());
                 if (inserted <= 0) {
                     continue;
                 }
@@ -144,14 +139,10 @@ public final class NetworkHopperStorage {
 
     public static void processOutputs(Network network) {
         HopperInventories hoppers = resolveHopperInventories(network);
-        processOutputs(network, hoppers.outputs(), LinkedChestStorage.resolveInventories(network));
+        processOutputs(network, hoppers.outputs());
     }
 
-    private static void processOutputs(
-            Network network,
-            List<HopperInventory> hoppers,
-            List<Inventory> linkedInventories
-    ) {
+    private static void processOutputs(Network network, List<HopperInventory> hoppers) {
         Map<String, Long> availableAmounts = null;
         for (HopperInventory hopper : hoppers) {
             Block block = hopper.block();
@@ -169,13 +160,13 @@ public final class NetworkHopperStorage {
                 }
                 long room = Math.min(maxStack - current, availableCapacity(inventory, filter));
                 if (availableAmounts == null) {
-                    availableAmounts = network.getCombinedAmounts(linkedInventories);
+                    availableAmounts = network.getCombinedAmounts();
                 }
                 long amount = Math.min(room, availableAmounts.getOrDefault(itemKey, 0L));
                 if (amount <= 0) {
                     continue;
                 }
-                long extracted = network.extract(itemKey, amount, linkedInventories);
+                long extracted = network.extract(itemKey, amount);
                 if (extracted <= 0) {
                     continue;
                 }

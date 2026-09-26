@@ -8,9 +8,7 @@ import gg.drak.restored.data.Network;
 import gg.drak.restored.data.NetworkManager;
 import gg.drak.restored.data.QuantityOperand;
 import gg.drak.restored.data.StoredStack;
-import gg.drak.restored.util.LinkedChestStorage;
 import org.bukkit.event.Listener;
-import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
 
 import java.util.List;
@@ -45,7 +43,7 @@ public final class CompactorAugmentListener implements Listener {
             return;
         }
         // Only configured+enabled entries can do anything, so skip the whole pass (and the
-        // linked-chest resolve) when nothing is actionable.
+        // linked-chest reads) when nothing is actionable.
         boolean anyActionable = false;
         for (CompactConfiguration configuration : configurations) {
             if (configuration != null && configuration.isEnabled() && configuration.isConfigured()) {
@@ -56,13 +54,11 @@ public final class CompactorAugmentListener implements Listener {
         if (!anyActionable) {
             return;
         }
-        List<Inventory> linkedInventories = LinkedChestStorage.resolveInventories(network);
-        // Each configuration consults exactly one item key, and its Material is known from the
-        // configured item. Looking those up individually avoids getCombinedAmounts(), which
-        // hashes every slot of every linked chest to build a map that is almost all discarded.
+        // Each configuration consults exactly one item key, so amounts are looked up per key
+        // and remembered across configurations within this pass.
         Map<String, Long> availableAmounts = new java.util.HashMap<>();
         for (CompactConfiguration configuration : configurations) {
-            apply(network, configuration, linkedInventories, availableAmounts);
+            apply(network, configuration, availableAmounts);
         }
         // NetworkSaveTimer persists dirty networks in coalesced snapshots. Do not
         // capture the complete network once per compactor pass on the main thread.
@@ -71,7 +67,6 @@ public final class CompactorAugmentListener implements Listener {
     private static boolean apply(
             Network network,
             CompactConfiguration configuration,
-            List<Inventory> linkedInventories,
             Map<String, Long> availableAmounts
     ) {
         if (configuration == null || !configuration.isEnabled() || !configuration.isConfigured()) {
@@ -84,8 +79,7 @@ public final class CompactorAugmentListener implements Listener {
         }
 
         String inputKey = StoredStack.itemKey(configuration.getItem());
-        long available = availableAmounts.computeIfAbsent(inputKey, key ->
-                network.getCombinedAmount(key, linkedInventories, configuration.getItem().getType()));
+        long available = availableAmounts.computeIfAbsent(inputKey, network::getCombinedAmount);
         QuantityOperand operand = configuration.getOperand();
         if (operand == null || !operand.test(available, configuration.getQuantity())) {
             return false;
@@ -110,7 +104,7 @@ public final class CompactorAugmentListener implements Listener {
         }
 
         long requestedInput = operations * conversion.inputAmount();
-        long taken = network.extract(inputKey, requestedInput, linkedInventories);
+        long taken = network.extract(inputKey, requestedInput);
         long completedOperations = taken / conversion.inputAmount();
         long remainder = taken - completedOperations * conversion.inputAmount();
         if (remainder > 0) {
@@ -122,11 +116,11 @@ public final class CompactorAugmentListener implements Listener {
 
         long requestedOutput = completedOperations * conversion.outputAmount();
         ItemStack output = conversion.outputStack();
-        long inserted = network.insert(output, requestedOutput, linkedInventories);
+        long inserted = network.insert(output, requestedOutput);
         if (inserted < requestedOutput) {
             // Roll back the output by amount and restore the input batch. Amounts are
             // restored rather than individual slots because both stores are aggregate.
-            network.extract(StoredStack.itemKey(output), inserted, linkedInventories);
+            network.extract(StoredStack.itemKey(output), inserted);
             network.forceInsert(configuration.getItem(), completedOperations * conversion.inputAmount());
             return false;
         }

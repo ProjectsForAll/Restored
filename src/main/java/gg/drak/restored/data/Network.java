@@ -2,6 +2,7 @@ package gg.drak.restored.data;
 
 import gg.drak.restored.Restored;
 import gg.drak.restored.serialization.PersistedItemCodec;
+import gg.drak.restored.util.LinkedChestCache;
 import gg.drak.restored.util.LinkedChestStorage;
 import gg.drak.restored.util.NetworkHopperStorage;
 import gg.drak.restored.util.NetworkBlockTags;
@@ -380,8 +381,10 @@ public class Network {
         if (world == null || world.isEmpty()) {
             return false;
         }
-        boolean added = linkedChestKeys.add(NetworkManager.locationKey(world, x, y, z));
+        String key = NetworkManager.locationKey(world, x, y, z);
+        boolean added = linkedChestKeys.add(key);
         if (added) {
+            LinkedChestCache.track(key);
             markDirty();
         }
         return added;
@@ -400,6 +403,7 @@ public class Network {
         }
         boolean removed = linkedChestKeys.remove(locationKey);
         if (removed) {
+            LinkedChestCache.untrack(locationKey);
             markDirty();
         }
         return removed;
@@ -407,7 +411,10 @@ public class Network {
 
     public void loadLinkedChest(String world, int x, int y, int z) {
         if (world != null && !world.isEmpty()) {
-            linkedChestKeys.add(NetworkManager.locationKey(world, x, y, z));
+            String key = NetworkManager.locationKey(world, x, y, z);
+            if (linkedChestKeys.add(key)) {
+                LinkedChestCache.track(key);
+            }
         }
     }
 
@@ -452,22 +459,12 @@ public class Network {
         return LinkedChestStorage.hasLinkedSpace(this, stack);
     }
 
+    /** Fills linked chests first, then virtual storage up to its capacity. */
     public long insert(ItemStack stack, long amount) {
-        return insert(stack, amount, null);
-    }
-
-    /**
-     * Inserts using a caller-provided linked-inventory snapshot. Periodic processors
-     * pass one snapshot through all operations in a tick to avoid resolving the same
-     * chest locations repeatedly.
-     */
-    public long insert(ItemStack stack, long amount, List<org.bukkit.inventory.Inventory> linkedInventories) {
         if (stack == null || stack.getType().isAir() || amount <= 0) {
             return 0;
         }
-        long linkedInserted = linkedInventories == null
-                ? LinkedChestStorage.insertIntoLinked(this, stack, amount)
-                : LinkedChestStorage.insertIntoLinked(linkedInventories, stack, amount);
+        long linkedInserted = LinkedChestStorage.insertIntoLinked(this, stack, amount);
         long remaining = amount - linkedInserted;
         if (remaining <= 0) {
             return linkedInserted;
@@ -506,19 +503,12 @@ public class Network {
         return amount;
     }
 
+    /** Takes from linked chests first, then from virtual storage. */
     public long extract(String itemKey, long amount) {
-        return extract(itemKey, amount, null);
-    }
-
-    /** Extracts using a caller-provided linked-inventory snapshot. */
-    public long extract(String itemKey, long amount, List<org.bukkit.inventory.Inventory> linkedInventories) {
         if (itemKey == null || amount <= 0) {
             return 0;
         }
-        long linkedTaken = linkedInventories == null
-                ? LinkedChestStorage.extractFromLinked(this, itemKey, amount)
-                : LinkedChestStorage.extractFromLinked(
-                        linkedInventories, itemKey, amount, materialOf(itemKey));
+        long linkedTaken = LinkedChestStorage.extractFromLinked(this, itemKey, amount);
         long remaining = amount - linkedTaken;
         if (remaining <= 0) {
             return linkedTaken;
@@ -540,7 +530,8 @@ public class Network {
     }
 
     /**
-     * Merged view of virtual storage plus live linked-chest contents (by item key).
+     * Merged view of virtual storage plus linked-chest contents (by item key). Linked chests in
+     * unloaded chunks contribute their last known contents.
      */
     public List<StoredStack> getCombinedStacks() {
         return getCombinedStacks(null);
@@ -548,9 +539,8 @@ public class Network {
 
     /**
      * @param accept optional Material test. Periodic augment processors that consume only one
-     *               family of items (arrows, food, rockets) pass it so linked-chest slots they
-     *               would discard are never hashed. Virtual storage is filtered too, so callers
-     *               still see exactly the stacks they would have kept.
+     *               family of items (arrows, food, rockets) pass it to skip everything else.
+     *               Virtual storage is filtered too, so callers see exactly the stacks they keep.
      */
     public List<StoredStack> getCombinedStacks(java.util.function.Predicate<org.bukkit.Material> accept) {
         Map<String, StoredStack> combined = new java.util.LinkedHashMap<>();
@@ -559,11 +549,12 @@ public class Network {
             if (accept != null && (stack.getTemplate() == null || !accept.test(stack.getTemplate().getType()))) {
                 continue;
             }
-            combined.put(entry.getKey(), new StoredStack(stack.getTemplate(), stack.getAmount()));
+            StoredStack copy = new StoredStack(stack.getTemplate(), stack.getAmount());
+            copy.setCachedItemKey(entry.getKey());
+            combined.put(entry.getKey(), copy);
         }
         for (Map.Entry<String, StoredStack> entry
-                : LinkedChestStorage.aggregateLinkedByKey(
-                        LinkedChestStorage.resolveInventories(this), accept).entrySet()) {
+                : LinkedChestStorage.aggregateLinkedByKey(this, accept).entrySet()) {
             StoredStack linked = entry.getValue();
             StoredStack existing = combined.get(entry.getKey());
             if (existing == null) {
@@ -575,12 +566,11 @@ public class Network {
         return new ArrayList<>(combined.values());
     }
 
+    /**
+     * Amount of {@code itemKey} that {@link #extract} can currently reach: virtual storage plus
+     * linked chests that are loaded.
+     */
     public long getCombinedAmount(String itemKey) {
-        return getCombinedAmount(itemKey, null);
-    }
-
-    /** Gets a combined amount using a caller-provided linked-inventory snapshot. */
-    public long getCombinedAmount(String itemKey, List<org.bukkit.inventory.Inventory> linkedInventories) {
         if (itemKey == null) {
             return 0;
         }
@@ -589,58 +579,20 @@ public class Network {
         if (virtual != null) {
             total += virtual.getAmount();
         }
-        total += linkedInventories == null
-                ? LinkedChestStorage.extractableAmount(this, itemKey)
-                : LinkedChestStorage.extractableAmount(linkedInventories, itemKey, materialOf(itemKey));
-        return total;
+        return total + LinkedChestStorage.extractableAmount(this, itemKey);
     }
 
     /**
-     * Material behind an item key when virtual storage happens to hold it, else null.
-     * Lets linked-chest scans reject slots on Material instead of hashing every one.
+     * Item key → amount {@link #extract} can currently reach, for callers checking several keys
+     * at once.
      */
-    /** Combined amount for one key whose Material the caller already knows. */
-    public long getCombinedAmount(
-            String itemKey, List<org.bukkit.inventory.Inventory> linkedInventories, org.bukkit.Material keyMaterial) {
-        if (itemKey == null) {
-            return 0;
-        }
-        long total = 0;
-        StoredStack virtual = items.get(itemKey);
-        if (virtual != null) {
-            total += virtual.getAmount();
-        }
-        total += LinkedChestStorage.extractableAmount(
-                linkedInventories == null ? LinkedChestStorage.resolveInventories(this) : linkedInventories,
-                itemKey,
-                keyMaterial);
-        return total;
-    }
-
-    private org.bukkit.Material materialOf(String itemKey) {
-        StoredStack stack = itemKey == null ? null : items.get(itemKey);
-        return stack == null || stack.getTemplate() == null ? null : stack.getTemplate().getType();
-    }
-
-    /**
-     * Creates one combined amount map for a linked-inventory snapshot. Periodic
-     * augment processors use this when checking several filters/configurations so
-     * each physical chest is scanned once instead of once per filter.
-     */
-    public Map<String, Long> getCombinedAmounts(List<org.bukkit.inventory.Inventory> linkedInventories) {
+    public Map<String, Long> getCombinedAmounts() {
         Map<String, Long> amounts = new java.util.HashMap<>();
         for (Map.Entry<String, StoredStack> entry : items.entrySet()) {
             amounts.merge(entry.getKey(), entry.getValue().getAmount(), Long::sum);
         }
-        List<org.bukkit.inventory.Inventory> inventories = linkedInventories == null
-                ? LinkedChestStorage.resolveInventories(this) : linkedInventories;
-        for (org.bukkit.inventory.Inventory inventory : inventories) {
-            for (ItemStack stack : inventory.getContents()) {
-                if (stack == null || stack.getType().isAir()) {
-                    continue;
-                }
-                amounts.merge(StoredStack.itemKey(stack), (long) stack.getAmount(), Long::sum);
-            }
+        for (Map.Entry<String, Long> entry : LinkedChestStorage.linkedAmounts(this).entrySet()) {
+            amounts.merge(entry.getKey(), entry.getValue(), Long::sum);
         }
         return amounts;
     }
@@ -727,6 +679,9 @@ public class Network {
     public void delete() {
         clearLinkedChestTags();
         clearLinkedHopperTags();
+        for (String key : linkedChestKeys) {
+            LinkedChestCache.untrack(key);
+        }
         linkedChestKeys.clear();
         linkedHopperKeys.clear();
         linkedHopperRoles.clear();

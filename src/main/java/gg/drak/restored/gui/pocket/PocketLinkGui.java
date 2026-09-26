@@ -187,8 +187,8 @@ public class PocketLinkGui extends AbstractInventoryGui implements PocketLinkGui
                 player.sendMessage(LegacyColors.color("#FF5555You do not have access to this network."));
                 return;
             }
-            // Opened away from the network: linked chests are usually in unloaded chunks, and
-            // resolveInventories() skips those, so their contents would be invisible here.
+            // Opened away from the network: linked chests are usually in unloaded chunks. Their
+            // contents are listed from the cache regardless, but withdrawing needs them loaded.
             gg.drak.restored.util.LinkedChestStorage.prepareLinkedChunks(
                     network, player.getUniqueId(), () -> {
                         if (!player.isOnline()) {

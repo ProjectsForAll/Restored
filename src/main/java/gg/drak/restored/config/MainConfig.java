@@ -6,6 +6,8 @@ import gg.drak.restored.Restored;
 public class MainConfig extends SimpleConfiguration {
     public static final String LINKED_CHEST_MAX_DISTANCE_PATH = "linked-chest-max-distance";
     public static final int DEFAULT_LINKED_CHEST_MAX_DISTANCE = 64;
+    public static final String LINKED_CHEST_KEEP_LOADED_PATH = "linked-chest-keep-chunks-loaded";
+    public static final boolean DEFAULT_LINKED_CHEST_KEEP_LOADED = true;
 
     public static final String MAGNET_INTERVAL_PATH = "tick-intervals.magnet";
     public static final int DEFAULT_MAGNET_INTERVAL = 5;
@@ -23,6 +25,7 @@ public class MainConfig extends SimpleConfiguration {
     @Override
     public void init() {
         getLinkedChestMaxDistance();
+        isLinkedChestKeepChunksLoaded();
         getMagnetInterval();
         getHopperInterval();
         getCompactorInterval();
@@ -54,6 +57,17 @@ public class MainConfig extends SimpleConfiguration {
         reloadResource();
         int ticks = getOrSetDefault(path, fallback);
         return ticks < 1 ? fallback : ticks;
+    }
+
+    /**
+     * Whether chunks holding linked chests are kept loaded (and ticking) for as long as they are
+     * linked, so the network can always push to and pull from them. When off, linked chests in
+     * unloaded chunks are still listed from their last known contents but cannot be used until
+     * something loads the chunk.
+     */
+    public boolean isLinkedChestKeepChunksLoaded() {
+        reloadResource();
+        return getOrSetDefault(LINKED_CHEST_KEEP_LOADED_PATH, DEFAULT_LINKED_CHEST_KEEP_LOADED);
     }
 
     /**

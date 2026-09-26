@@ -112,9 +112,9 @@ public class NetworkItemsGui extends PaginatedInventoryGui {
     }
 
     /**
-     * Linked chests in unloaded chunks cannot be read, so their contents are missing from this
-     * view. Say so once per open rather than silently showing a smaller total — a silently wrong
-     * count is what makes items look like they randomly vanish.
+     * Linked chests that have not been loaded since the server started have no known contents,
+     * so they are missing from this view. Say so once per open rather than silently showing a
+     * smaller total — a silently wrong count is what makes items look like they randomly vanish.
      */
     private void warnUnavailableLinks() {
         if (warnedUnavailable) {
@@ -124,8 +124,8 @@ public class NetworkItemsGui extends PaginatedInventoryGui {
         int unavailable = LinkedChestStorage.countUnavailableLinks(network);
         if (unavailable > 0) {
             player.sendMessage(LegacyColors.color(
-                    "#FF5555" + unavailable + " linked chest(s) are in unloaded chunks; "
-                            + "their contents are not shown."));
+                    "#FF5555" + unavailable + " linked chest(s) have not been loaded since the "
+                            + "server started; their contents are not shown."));
         }
     }
 
@@ -508,6 +508,9 @@ public class NetworkItemsGui extends PaginatedInventoryGui {
     private void withdraw(DisplayEntry entry, ClickType clickType) {
         long available = network.getCombinedAmount(entry.itemKey());
         if (available <= 0) {
+            // Listed but unreachable: the item only sits in linked chests whose chunks are unloaded.
+            player.sendMessage(LegacyColors.color(
+                    "#FF5555That item is in a linked chest that is not loaded right now."));
             return;
         }
         long withdrawAmount = switch (clickType) {
