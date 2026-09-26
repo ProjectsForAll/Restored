@@ -221,7 +221,7 @@ public final class LinkedChestStorage {
         Block block = location.getBlock();
         // Resolving the other half of a double chest reads the neighbouring block, and the
         // double inventory reads it too; both would load that chunk synchronously.
-        if (!partnerReachable(block)) {
+        if (!partnerReachable(key, block)) {
             return null;
         }
         Block canonical = canonicalStorageBlock(block);
@@ -277,8 +277,11 @@ public final class LinkedChestStorage {
     /**
      * False when {@code block} is half of a double chest whose other half sits in a chunk this
      * thread cannot touch. Single chests, barrels and other blocks are always reachable.
+     *
+     * <p>The partner's chunk is pinned for {@code key} before the check, so with keep-loaded on
+     * a double chest straddling a chunk border becomes reachable once that chunk has loaded.
      */
-    private static boolean partnerReachable(Block block) {
+    private static boolean partnerReachable(String key, Block block) {
         if (block.getType() != Material.CHEST || !(block.getBlockData() instanceof Chest chestData)) {
             return true;
         }
@@ -286,7 +289,10 @@ public final class LinkedChestStorage {
         if (face == null) {
             return true;
         }
-        return canTouch(block.getLocation().add(face.getModX(), 0, face.getModZ()));
+        int partnerX = block.getX() + face.getModX();
+        int partnerZ = block.getZ() + face.getModZ();
+        LinkedChestCache.holdPartnerChunk(key, block.getWorld(), partnerX >> 4, partnerZ >> 4);
+        return canTouch(new Location(block.getWorld(), partnerX, block.getY(), partnerZ));
     }
 
     private static void removeDead(Network network, List<String> dead) {
@@ -355,8 +361,8 @@ public final class LinkedChestStorage {
             if (byKey.containsKey(key)) {
                 continue;
             }
-            Location location = parseLocationKey(key);
-            boolean touchable = location != null && canTouch(location);
+            // False for malformed (untracked) keys and for worlds that are not loaded.
+            boolean touchable = LinkedChestCache.isTouchable(key);
             if (LinkedChestCache.isFresh(key)) {
                 byKey.put(key, new LinkedView(key, LinkedChestCache.snapshot(key), touchable));
                 continue;
@@ -510,8 +516,9 @@ public final class LinkedChestStorage {
             }
             // The reference is recorded before the async load finishes, so releasing the lease
             // early still balances every acquire.
-            lease.hold(world, chunkX, chunkZ);
-            futures.add(ChunkTickets.acquire(world, chunkX, chunkZ));
+            if (lease.hold(world, chunkX, chunkZ)) {
+                futures.add(ChunkTickets.acquire(world, chunkX, chunkZ));
+            }
         }
         Location anchor = linked.get(0);
         java.util.concurrent.CompletableFuture
@@ -759,6 +766,19 @@ public final class LinkedChestStorage {
             }
         }
         return total;
+    }
+
+    /** True when some of {@code itemKey} is known to sit in linked chests that cannot be reached now. */
+    public static boolean hasUnreachableAmount(Network network, String itemKey) {
+        if (network == null || itemKey == null) {
+            return false;
+        }
+        for (LinkedView view : views(network)) {
+            if (!view.live() && view.snapshot() != null && view.snapshot().amount(itemKey) > 0) {
+                return true;
+            }
+        }
+        return false;
     }
 
     public static ItemStack findTemplate(Network network, String itemKey) {

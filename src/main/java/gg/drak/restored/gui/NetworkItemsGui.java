@@ -508,9 +508,13 @@ public class NetworkItemsGui extends PaginatedInventoryGui {
     private void withdraw(DisplayEntry entry, ClickType clickType) {
         long available = network.getCombinedAmount(entry.itemKey());
         if (available <= 0) {
-            // Listed but unreachable: the item only sits in linked chests whose chunks are unloaded.
-            player.sendMessage(LegacyColors.color(
-                    "#FF5555That item is in a linked chest that is not loaded right now."));
+            if (LinkedChestStorage.hasUnreachableAmount(network, entry.itemKey())) {
+                player.sendMessage(LegacyColors.color(
+                        "#FF5555That item is in a linked chest that is not loaded right now."));
+            } else {
+                // Taken by someone else since this page was drawn.
+                render();
+            }
             return;
         }
         long withdrawAmount = switch (clickType) {

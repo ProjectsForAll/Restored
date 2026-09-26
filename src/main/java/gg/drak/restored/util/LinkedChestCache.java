@@ -2,6 +2,7 @@ package gg.drak.restored.util;
 
 import gg.drak.restored.data.NetworkManager;
 import gg.drak.restored.data.StoredStack;
+import org.bukkit.Bukkit;
 import org.bukkit.Chunk;
 import org.bukkit.Location;
 import org.bukkit.World;
@@ -205,6 +206,21 @@ public final class LinkedChestCache {
             entry.partnerChunk = chunkId(world.getName(), chunkX, chunkZ);
         }
         ChunkTickets.acquire(world, chunkX, chunkZ);
+    }
+
+    /**
+     * Whether a tracked chest's chunk is loaded and owned by the current thread. Works from the
+     * entry's stored chunk coordinates, so hot paths never re-parse the location key.
+     */
+    static boolean isTouchable(String key) {
+        Entry entry = ENTRIES.get(key);
+        if (entry == null) {
+            return false;
+        }
+        World world = Bukkit.getWorld(entry.world);
+        return world != null
+                && world.isChunkLoaded(entry.chunkX, entry.chunkZ)
+                && Bukkit.isOwnedByCurrentRegion(world, entry.chunkX, entry.chunkZ);
     }
 
     /** Cached snapshot, or null when the chest has never been read. */
