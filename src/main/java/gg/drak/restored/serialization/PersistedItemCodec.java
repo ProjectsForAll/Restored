@@ -81,13 +81,31 @@ public final class PersistedItemCodec {
         }
     }
 
+    /** Decodes a payload, substituting a barrier for anything that cannot be decoded. */
     public static ItemStack deserializePayload(String itemDataStr) {
-        if (itemDataStr == null || itemDataStr.isBlank() || "{}".equals(itemDataStr.trim())) {
+        ItemStack stack = tryDeserializePayload(itemDataStr);
+        if (stack == null) {
+            Restored.getInstance().logWarning("PersistedItemCodec: could not deserialize item payload (using barrier).");
             return new ItemStack(Material.BARRIER);
+        }
+        return stack;
+    }
+
+    /**
+     * Decodes a payload, or returns null when it cannot be decoded on this server — typically an
+     * item that references registry entries (datapack jukebox songs, enchantments, ...) which
+     * are not currently loaded. Callers holding stored data must keep the original payload in
+     * that case rather than persist a substitute.
+     */
+    public static ItemStack tryDeserializePayload(String itemDataStr) {
+        if (itemDataStr == null || itemDataStr.isBlank() || "{}".equals(itemDataStr.trim())) {
+            return null;
         }
         String trimmed = itemDataStr.trim();
 
         if (trimmed.startsWith(PREFIX_PB64)) {
+            // A pb64 payload is only ever Paper bytes; the JSON fallbacks below cannot read it
+            // and only flood the log with parser stack traces.
             try {
                 byte[] bytes = Base64.getDecoder().decode(trimmed.substring(PREFIX_PB64.length()));
                 ItemStack stack = ItemStack.deserializeBytes(bytes);
@@ -98,6 +116,7 @@ public final class PersistedItemCodec {
             } catch (Throwable t) {
                 Restored.getInstance().logWarning("PersistedItemCodec: pb64 decode failed: " + t.getMessage());
             }
+            return null;
         }
 
         // Pre-1.20.5 Spigot map shape: top-level "meta"
@@ -131,8 +150,7 @@ public final class PersistedItemCodec {
             }
         }
 
-        Restored.getInstance().logWarning("PersistedItemCodec: could not deserialize item payload (using barrier).");
-        return new ItemStack(Material.BARRIER);
+        return null;
     }
 
     private static byte[] asTemplateBytes(ItemStack stack) {

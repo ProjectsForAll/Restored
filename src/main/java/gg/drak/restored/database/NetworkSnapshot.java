@@ -84,6 +84,9 @@ public final class NetworkSnapshot {
                     stack.getAmount()
             ));
         }
+        for (Network.UnresolvedItem unresolved : network.getUnresolvedItems()) {
+            items.add(new ItemEntry(unresolved.itemKey(), unresolved.itemData(), unresolved.amount()));
+        }
 
         List<PermissionEntry> permissions = new ArrayList<>();
         for (Map.Entry<UUID, NetworkRole> entry : network.getRoles().entrySet()) {

@@ -38,6 +38,10 @@ public final class RecipeRegistrar {
             desired.put(keyFor(recipe.getId()), recipe);
         }
 
+        if (REGISTERED.isEmpty()) {
+            adoptServerRecipes(desired);
+        }
+
         Set<NamespacedKey> toRemove = new LinkedHashSet<>(REGISTERED);
         Set<NamespacedKey> toAdd = new LinkedHashSet<>();
         for (Map.Entry<NamespacedKey, ConfiguredRecipe> entry : desired.entrySet()) {
@@ -68,6 +72,7 @@ public final class RecipeRegistrar {
             if (result.changed()) {
                 REGISTERED.remove(key);
                 BY_KEY.remove(key);
+                System.clearProperty(fingerprintProperty(key));
             }
         }
 
@@ -81,6 +86,7 @@ public final class RecipeRegistrar {
                 if (result.changed()) {
                     REGISTERED.add(key);
                     BY_KEY.put(key, recipe);
+                    System.setProperty(fingerprintProperty(key), fingerprint(recipe));
                 }
             } catch (Exception e) {
                 Restored.getInstance().logWarning("Failed to register recipe " + recipe.getId() + ": " + e.getMessage());
@@ -99,6 +105,7 @@ public final class RecipeRegistrar {
         for (int i = 0; i < keys.size(); i++) {
             RegistryResult result = removeRecipe(keys.get(i));
             usedDirectRegistryMutation |= result.directMutation();
+            System.clearProperty(fingerprintProperty(keys.get(i)));
         }
         if (usedDirectRegistryMutation) {
             Bukkit.updateRecipes();
@@ -213,6 +220,55 @@ public final class RecipeRegistrar {
             }
         }
         return registryBridge;
+    }
+
+    /**
+     * Picks up Restored recipes the server already holds from an earlier load of this plugin
+     * (a /reload or plugin-manager reload keeps them registered, but this class starts empty).
+     *
+     * <p>Every Bukkit.addRecipe/removeRecipe rebuilds the recipe book and reloads every online
+     * player's advancements, so re-adding an unchanged set stalls the server for seconds. A
+     * recipe whose definition fingerprint matches the one recorded when it was added is adopted
+     * as-is; any other Restored-namespace recipe is adopted without a definition, which makes the
+     * normal diff below replace or remove it. The fingerprints live in JVM system properties
+     * because those share the recipe registry's lifetime: they survive plugin reloads and vanish
+     * on a server restart, exactly when the registry is rebuilt from nothing.
+     */
+    private static void adoptServerRecipes(Map<NamespacedKey, ConfiguredRecipe> desired) {
+        String namespace = keyFor("probe").getNamespace();
+        java.util.Iterator<Recipe> iterator = Bukkit.recipeIterator();
+        while (iterator.hasNext()) {
+            Recipe recipe;
+            try {
+                recipe = iterator.next();
+            } catch (RuntimeException e) {
+                continue;
+            }
+            if (!(recipe instanceof Keyed keyed) || !namespace.equals(keyed.getKey().getNamespace())) {
+                continue;
+            }
+            NamespacedKey key = keyed.getKey();
+            REGISTERED.add(key);
+            ConfiguredRecipe wanted = desired.get(key);
+            if (wanted != null && fingerprint(wanted).equals(System.getProperty(fingerprintProperty(key)))) {
+                BY_KEY.put(key, wanted);
+            }
+        }
+    }
+
+    private static String fingerprintProperty(NamespacedKey key) {
+        return "restored.recipe." + key;
+    }
+
+    private static String fingerprint(ConfiguredRecipe recipe) {
+        return String.valueOf(Objects.hash(
+                recipe.isEnabled(),
+                recipe.getId(),
+                recipe.getType(),
+                recipe.getResultId(),
+                recipe.getShape(),
+                recipe.getShapedIngredients(),
+                recipe.getShapelessIngredients()));
     }
 
     private static boolean sameDefinition(ConfiguredRecipe left, ConfiguredRecipe right) {

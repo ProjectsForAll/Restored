@@ -59,6 +59,9 @@ public class Network {
     /** Persisted automatic compactor rules. */
     @Getter(AccessLevel.NONE)
     private final ConcurrentHashMap<UUID, CompactConfiguration> compactConfigurations = new ConcurrentHashMap<>();
+    /** Stored items whose payload cannot be decoded on this server; see {@link #loadItem}. */
+    @Getter(AccessLevel.NONE)
+    private final ConcurrentHashMap<String, UnresolvedItem> unresolvedItems = new ConcurrentHashMap<>();
     /** Virtual-storage item total, maintained alongside the item map for hot capacity checks. */
     private final AtomicLong totalItems = new AtomicLong();
     private final AtomicBoolean dirty = new AtomicBoolean(false);
@@ -429,7 +432,7 @@ public class Network {
     }
 
     public boolean isEmpty() {
-        if (!items.isEmpty()) {
+        if (!items.isEmpty() || !unresolvedItems.isEmpty()) {
             return false;
         }
         if (upgradeCount > 0 || enchantingBookshelves > 0 || !installedAugments.isEmpty()) {
@@ -690,7 +693,16 @@ public class Network {
     }
 
     public void loadItem(String itemKey, String itemData, long amount) {
-        ItemStack stack = PersistedItemCodec.deserializePayload(itemData);
+        ItemStack stack = PersistedItemCodec.tryDeserializePayload(itemData);
+        if (stack == null) {
+            // Kept byte-for-byte and written back unchanged, so the item returns intact once
+            // whatever it depends on (usually a datapack) is available again. It still occupies
+            // capacity, but is not listed or withdrawable meanwhile.
+            unresolvedItems.merge(itemKey, new UnresolvedItem(itemKey, itemData, amount),
+                    (a, b) -> new UnresolvedItem(a.itemKey(), a.itemData(), a.amount() + b.amount()));
+            totalItems.addAndGet(amount);
+            return;
+        }
         // Recompute identity from the actual stack so withdraw/deposit keys match after codec changes.
         String key = StoredStack.itemKey(stack);
         StoredStack existing = items.get(key);
@@ -703,6 +715,14 @@ public class Network {
         if (!key.equals(itemKey)) {
             markDirty();
         }
+    }
+
+    /** A stored item this server cannot currently decode, preserved as its raw payload. */
+    public record UnresolvedItem(String itemKey, String itemData, long amount) {
+    }
+
+    public java.util.Collection<UnresolvedItem> getUnresolvedItems() {
+        return Collections.unmodifiableCollection(unresolvedItems.values());
     }
 
     public ItemData toItemData(String itemKey, StoredStack stack) {
