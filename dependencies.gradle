@@ -5,11 +5,11 @@ ext {
             'de.rapha149.signgui:signgui:2.5.4',
     ]
     ANNO = [
-            'gg.drak:BukkitOfUtils:1.19.0',
+            'gg.drak:BukkitOfUtils:1.19.4',
             'dev.folia:folia-api:1.21.5-R0.1-SNAPSHOT',
     ]
     COMP_ONLY = [
-            'gg.drak:BukkitOfUtils:1.19.0',
+            'gg.drak:BukkitOfUtils:1.19.4',
             'dev.folia:folia-api:1.21.5-R0.1-SNAPSHOT',
     ]
     FILES = [
