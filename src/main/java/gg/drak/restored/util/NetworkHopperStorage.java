@@ -15,9 +15,11 @@ import org.bukkit.inventory.ItemStack;
 import org.bukkit.persistence.PersistentDataType;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 /** Runtime processing and block configuration for linked network hopper chests. */
 public final class NetworkHopperStorage {
@@ -143,24 +145,43 @@ public final class NetworkHopperStorage {
     }
 
     private static void processOutputs(Network network, List<HopperInventory> hoppers) {
-        Map<String, Long> availableAmounts = null;
+        if (hoppers.isEmpty()) {
+            return;
+        }
+        // Filters come from the tile snapshot resolveHopperInventories already took, decoded once
+        // per distinct stored value; the item keys they need are known up front, so the network
+        // only totals those instead of every item it holds.
+        List<List<Filter>> filtersByHopper = new ArrayList<>(hoppers.size());
+        Set<String> wanted = new HashSet<>();
         for (HopperInventory hopper : hoppers) {
-            Block block = hopper.block();
+            List<Filter> filters = cachedFilters(hopper.tile());
+            filtersByHopper.add(filters);
+            for (Filter filter : filters) {
+                wanted.add(filter.itemKey());
+            }
+        }
+        if (wanted.isEmpty()) {
+            return;
+        }
+        Map<String, Long> availableAmounts = null;
+        for (int index = 0; index < hoppers.size(); index++) {
+            HopperInventory hopper = hoppers.get(index);
+            List<Filter> filters = filtersByHopper.get(index);
+            if (filters.isEmpty()) {
+                continue;
+            }
             Inventory inventory = hopper.inventory();
-            List<ItemStack> filters = getFilters(block);
-            int maxStack = getMaxStackSize(block);
-            for (ItemStack filter : filters) {
-                if (filter == null || filter.getType().isAir()) {
-                    continue;
-                }
-                String itemKey = StoredStack.itemKey(filter);
+            int maxStack = getMaxStackSize(hopper.tile());
+            for (Filter entry : filters) {
+                ItemStack filter = entry.item();
+                String itemKey = entry.itemKey();
                 long current = countSimilar(inventory, filter);
                 if (current >= maxStack) {
                     continue;
                 }
                 long room = Math.min(maxStack - current, availableCapacity(inventory, filter));
                 if (availableAmounts == null) {
-                    availableAmounts = network.getCombinedAmounts();
+                    availableAmounts = network.getCombinedAmountsFor(wanted);
                 }
                 long amount = Math.min(room, availableAmounts.getOrDefault(itemKey, 0L));
                 if (amount <= 0) {
@@ -177,7 +198,7 @@ public final class NetworkHopperStorage {
                     long notAdded = leftovers.values().stream().mapToLong(ItemStack::getAmount).sum();
                     if (notAdded > 0) {
                         // Capacity was calculated before the insert; return a rare race remainder safely.
-                        network.forceInsert(filter, notAdded);
+                        network.forceInsert(filter.clone(), notAdded);
                     }
                     extracted -= notAdded;
                 }
@@ -209,11 +230,12 @@ public final class NetworkHopperStorage {
                 continue;
             }
             Block block = location.getBlock();
-            // One getState() snapshot serves the role tag, the link tag and the inventory.
-            // role()/getLinkedNetworkId() would each take their own full tile-entity copy.
+            // One getState(false) read serves the role tag, the link tag, the filters, the max
+            // stack and the inventory. It skips the tile-entity snapshot copy that getState()
+            // makes (the bulk of this method's cost in profiles) and is only read from here.
             // TileState first, exactly as the old role(block) path tested it, so this cannot
             // reject a block the previous code accepted.
-            if (!(block.getState() instanceof TileState tile)) {
+            if (!(block.getState(false) instanceof TileState tile)) {
                 continue;
             }
             if (!(tile instanceof Container container)) {
@@ -226,7 +248,7 @@ public final class NetworkHopperStorage {
                 dead.add(key);
                 continue;
             }
-            HopperInventory hopper = new HopperInventory(block, container.getInventory());
+            HopperInventory hopper = new HopperInventory(block, tile, container.getInventory());
             List<HopperInventory> target = actualRole == NetworkHopperRole.INPUT ? inputs : outputs;
             boolean alreadyPresent = false;
             for (HopperInventory existing : target) {
@@ -287,6 +309,12 @@ public final class NetworkHopperStorage {
         if (raw == null || raw.isBlank()) {
             return filters;
         }
+        return parseFilters(raw);
+    }
+
+    /** The {@link #FILTER_SLOTS} filter stacks encoded in {@code raw}; empty slots are null. */
+    private static List<ItemStack> parseFilters(String raw) {
+        List<ItemStack> filters = emptyFilters();
         String[] parts = raw.split(FILTER_SEPARATOR, -1);
         for (int i = 0; i < FILTER_SLOTS && i < parts.length; i++) {
             if (parts[i].isBlank()) {
@@ -323,7 +351,10 @@ public final class NetworkHopperStorage {
     }
 
     public static int getMaxStackSize(Block block) {
-        TileState tile = tile(block);
+        return getMaxStackSize(tile(block));
+    }
+
+    private static int getMaxStackSize(TileState tile) {
         if (tile == null) {
             return DEFAULT_MAX_STACK_SIZE;
         }
@@ -357,13 +388,49 @@ public final class NetworkHopperStorage {
     }
 
     private static org.bukkit.NamespacedKey key(String name) {
-        return new org.bukkit.NamespacedKey(gg.drak.restored.Restored.getInstance(), name);
+        return KEYS.computeIfAbsent(name, n -> new org.bukkit.NamespacedKey(gg.drak.restored.Restored.getInstance(), n));
     }
 
     private record HopperInventories(List<HopperInventory> inputs, List<HopperInventory> outputs) {
     }
 
-    private record HopperInventory(Block block, Inventory inventory) {
+    private record HopperInventory(Block block, TileState tile, Inventory inventory) {
+    }
+
+    /** A decoded output filter with its item key, computed once per stored filter value. */
+    private record Filter(ItemStack item, String itemKey) {
+    }
+
+    /**
+     * Decoded filters by their raw stored string. Keyed by the value itself, so a changed filter
+     * simply misses the cache; bounded so retired values cannot pile up. Entries are shared and
+     * must never be mutated.
+     */
+    private static final Map<String, List<Filter>> FILTER_CACHE = new java.util.concurrent.ConcurrentHashMap<>();
+    private static final int FILTER_CACHE_LIMIT = 256;
+    private static final Map<String, org.bukkit.NamespacedKey> KEYS = new java.util.concurrent.ConcurrentHashMap<>();
+
+    private static List<Filter> cachedFilters(TileState tile) {
+        String raw = tile.getPersistentDataContainer().get(key(FILTER_KEY), PersistentDataType.STRING);
+        if (raw == null || raw.isBlank()) {
+            return List.of();
+        }
+        List<Filter> cached = FILTER_CACHE.get(raw);
+        if (cached != null) {
+            return cached;
+        }
+        List<Filter> parsed = new ArrayList<>();
+        for (ItemStack filter : parseFilters(raw)) {
+            if (filter != null && !filter.getType().isAir()) {
+                parsed.add(new Filter(filter, StoredStack.itemKey(filter)));
+            }
+        }
+        List<Filter> result = List.copyOf(parsed);
+        if (FILTER_CACHE.size() >= FILTER_CACHE_LIMIT) {
+            FILTER_CACHE.clear();
+        }
+        FILTER_CACHE.put(raw, result);
+        return result;
     }
 
     private static long countSimilar(Inventory inventory, ItemStack template) {

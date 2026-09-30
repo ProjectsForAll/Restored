@@ -39,6 +39,12 @@ public final class LinkedChestCache {
 
     private static final Map<String, Entry> ENTRIES = new ConcurrentHashMap<>();
     private static final Map<String, Set<String>> BY_CHUNK = new ConcurrentHashMap<>();
+    /**
+     * World name → packed chunk coordinates that hold at least one tracked location. Lets
+     * {@link #markDirtyAt(Location)}, which runs for every hopper move on the server, reject
+     * an untracked chunk without building a location key string.
+     */
+    private static final Map<String, Set<Long>> TRACKED_CHUNKS = new ConcurrentHashMap<>();
     private static volatile boolean keepChunksLoaded;
 
     private LinkedChestCache() {
@@ -117,6 +123,10 @@ public final class LinkedChestCache {
         }
     }
 
+    private static long packChunk(int chunkX, int chunkZ) {
+        return ((long) chunkX << 32) | (chunkZ & 0xFFFFFFFFL);
+    }
+
     private static String chunkId(String world, int chunkX, int chunkZ) {
         return world + ':' + chunkX + ':' + chunkZ;
     }
@@ -149,6 +159,8 @@ public final class LinkedChestCache {
             entry = ENTRIES.computeIfAbsent(key, k -> new Entry(k, world, x, z));
             entry.refs++;
             BY_CHUNK.computeIfAbsent(entry.chunkId(), c -> ConcurrentHashMap.newKeySet()).add(key);
+            TRACKED_CHUNKS.computeIfAbsent(world, w -> ConcurrentHashMap.newKeySet())
+                    .add(packChunk(entry.chunkX, entry.chunkZ));
             pin = entry.refs == 1 && keepChunksLoaded && location != null;
             if (pin) {
                 entry.ticketHeld = true;
@@ -176,6 +188,10 @@ public final class LinkedChestCache {
                 keys.remove(key);
                 if (keys.isEmpty()) {
                     BY_CHUNK.remove(entry.chunkId());
+                    Set<Long> chunks = TRACKED_CHUNKS.get(entry.world);
+                    if (chunks != null) {
+                        chunks.remove(packChunk(entry.chunkX, entry.chunkZ));
+                    }
                 }
             }
         }
@@ -317,11 +333,18 @@ public final class LinkedChestCache {
             return;
         }
         String name = world.getName();
-        int y = location.getBlockY();
         int x0 = (int) Math.floor(location.getX());
         int x1 = (int) Math.ceil(location.getX());
         int z0 = (int) Math.floor(location.getZ());
         int z1 = (int) Math.ceil(location.getZ());
+        // Hopper move events fire constantly across the whole server and almost none touch a
+        // tracked chunk, so bail out before building any key string.
+        Set<Long> chunks = TRACKED_CHUNKS.get(name);
+        if (chunks == null
+                || (!chunks.contains(packChunk(x0 >> 4, z0 >> 4)) && !chunks.contains(packChunk(x1 >> 4, z1 >> 4)))) {
+            return;
+        }
+        int y = location.getBlockY();
         markDirty(NetworkManager.locationKey(name, x0, y, z0));
         if (x1 != x0 || z1 != z0) {
             markDirty(NetworkManager.locationKey(name, x1, y, z1));
@@ -374,6 +397,7 @@ public final class LinkedChestCache {
         synchronized (ENTRIES) {
             ENTRIES.clear();
             BY_CHUNK.clear();
+            TRACKED_CHUNKS.clear();
         }
     }
 

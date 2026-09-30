@@ -722,6 +722,30 @@ public final class LinkedChestStorage {
         return amounts;
     }
 
+    /**
+     * Like {@link #linkedAmounts(Network)} but only for {@code itemKeys}: one lookup per key and
+     * chest instead of merging every chest's full totals, for callers that already know which
+     * items they need.
+     */
+    public static Map<String, Long> linkedAmountsFor(Network network, java.util.Collection<String> itemKeys) {
+        Map<String, Long> amounts = new java.util.HashMap<>();
+        if (itemKeys.isEmpty()) {
+            return amounts;
+        }
+        for (LinkedView view : views(network)) {
+            if (!view.live() || view.snapshot() == null) {
+                continue;
+            }
+            for (String itemKey : itemKeys) {
+                long amount = view.snapshot().amount(itemKey);
+                if (amount > 0) {
+                    amounts.merge(itemKey, amount, Long::sum);
+                }
+            }
+        }
+        return amounts;
+    }
+
     public static long countLinkedItems(Network network) {
         long total = 0;
         for (LinkedView view : views(network)) {
