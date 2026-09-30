@@ -4,6 +4,7 @@ import gg.drak.restored.Restored;
 import gg.drak.restored.util.LegacyColors;
 import gg.drak.restored.util.UuidUtils;
 import host.plas.bou.items.ItemUtils;
+import io.papermc.paper.persistence.PersistentDataContainerView;
 import org.bukkit.Material;
 import org.bukkit.NamespacedKey;
 import org.bukkit.inventory.ItemStack;
@@ -35,6 +36,8 @@ public final class RestoredItems {
     public static final String TYPE_NETWORK_HOPPER_OUTPUT = "network_hopper_output";
     public static final String TYPE_MAGNET_CORE = "magnet_core";
 
+    private static volatile NamespacedKey typeKey;
+
     private RestoredItems() {
     }
 
@@ -45,7 +48,29 @@ public final class RestoredItems {
         if (stack == null || stack.getType().isAir() || !stack.hasItemMeta()) {
             return Optional.empty();
         }
-        return ItemUtils.getTag(stack, Restored.getInstance(), TAG_TYPE);
+        return readString(stack, typeKey());
+    }
+
+    /**
+     * Reads a string tag through the stack's read-only persistent data view. Unlike
+     * {@code ItemUtils.getTag}, which clones the ItemMeta (twice) per call, this copies nothing;
+     * the inventory scans that run for every player every tick made that copy the plugin's
+     * biggest cost in profiles.
+     */
+    private static Optional<String> readString(ItemStack stack, NamespacedKey key) {
+        PersistentDataContainerView data = stack.getPersistentDataContainer();
+        return data.has(key, PersistentDataType.STRING)
+                ? Optional.ofNullable(data.get(key, PersistentDataType.STRING))
+                : Optional.empty();
+    }
+
+    private static NamespacedKey typeKey() {
+        NamespacedKey key = typeKey;
+        if (key == null) {
+            key = new NamespacedKey(Restored.getInstance(), TAG_TYPE);
+            typeKey = key;
+        }
+        return key;
     }
 
     public static boolean isType(ItemStack stack, String type) {

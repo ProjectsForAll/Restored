@@ -153,11 +153,13 @@ public final class NetworkHopperStorage {
         // only totals those instead of every item it holds.
         List<List<Filter>> filtersByHopper = new ArrayList<>(hoppers.size());
         Set<String> wanted = new HashSet<>();
+        Set<Material> wantedMaterials = java.util.EnumSet.noneOf(Material.class);
         for (HopperInventory hopper : hoppers) {
             List<Filter> filters = cachedFilters(hopper.tile());
             filtersByHopper.add(filters);
             for (Filter filter : filters) {
                 wanted.add(filter.itemKey());
+                wantedMaterials.add(filter.item().getType());
             }
         }
         if (wanted.isEmpty()) {
@@ -181,7 +183,7 @@ public final class NetworkHopperStorage {
                 }
                 long room = Math.min(maxStack - current, availableCapacity(inventory, filter));
                 if (availableAmounts == null) {
-                    availableAmounts = network.getCombinedAmountsFor(wanted);
+                    availableAmounts = network.getCombinedAmountsFor(wanted, wantedMaterials);
                 }
                 long amount = Math.min(room, availableAmounts.getOrDefault(itemKey, 0L));
                 if (amount <= 0) {

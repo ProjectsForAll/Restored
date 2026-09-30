@@ -5,6 +5,7 @@ import gg.drak.restored.data.StoredStack;
 import org.bukkit.Bukkit;
 import org.bukkit.Chunk;
 import org.bukkit.Location;
+import org.bukkit.Material;
 import org.bukkit.World;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
@@ -63,8 +64,19 @@ public final class LinkedChestCache {
             int emptySlots,
             long totalItems,
             int blockCount,
-            long takenAt
+            long takenAt,
+            Set<Material> materials
     ) {
+        /** True when some stack in this chest passes {@code accept}; one test per material, not per stack. */
+        public boolean hasMaterial(java.util.function.Predicate<Material> accept) {
+            for (Material material : materials) {
+                if (accept.test(material)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
         public long amount(String itemKey) {
             StoredStack stack = totals.get(itemKey);
             return stack == null ? 0 : stack.getAmount();
@@ -270,6 +282,7 @@ public final class LinkedChestCache {
         int empty = 0;
         long total = 0;
         int maxStack = inventory.getMaxStackSize();
+        Set<Material> materials = java.util.EnumSet.noneOf(Material.class);
         ItemStack[] contents = inventory.getContents();
         for (int i = 0; i < contents.length; i++) {
             ItemStack slot = contents[i];
@@ -277,6 +290,7 @@ public final class LinkedChestCache {
                 empty++;
                 continue;
             }
+            materials.add(slot.getType());
             String itemKey = entry.keyAt(i, slot);
             int amount = slot.getAmount();
             total += amount;
@@ -299,7 +313,8 @@ public final class LinkedChestCache {
                 empty,
                 total,
                 blockCount,
-                System.currentTimeMillis());
+                System.currentTimeMillis(),
+                Collections.unmodifiableSet(materials));
         entry.snapshot = snapshot;
         return snapshot;
     }
