@@ -684,7 +684,7 @@ public final class LinkedChestStorage {
             Network network, java.util.function.Predicate<Material> accept) {
         Map<String, StoredStack> aggregated = new LinkedHashMap<>();
         for (LinkedView view : views(network)) {
-            if (view.snapshot() == null) {
+            if (view.snapshot() == null || (accept != null && !view.snapshot().hasMaterial(accept))) {
                 continue;
             }
             for (Map.Entry<String, StoredStack> entry : view.snapshot().totals().entrySet()) {
@@ -717,6 +717,32 @@ public final class LinkedChestStorage {
             }
             for (Map.Entry<String, StoredStack> entry : view.snapshot().totals().entrySet()) {
                 amounts.merge(entry.getKey(), entry.getValue().getAmount(), Long::sum);
+            }
+        }
+        return amounts;
+    }
+
+    /**
+     * Like {@link #linkedAmounts(Network)} but only for {@code itemKeys}: one lookup per key and
+     * chest instead of merging every chest's full totals, for callers that already know which
+     * items they need.
+     */
+    public static Map<String, Long> linkedAmountsFor(
+            Network network, java.util.Collection<String> itemKeys, java.util.Set<org.bukkit.Material> materials) {
+        Map<String, Long> amounts = new java.util.HashMap<>();
+        if (itemKeys.isEmpty()) {
+            return amounts;
+        }
+        for (LinkedView view : views(network)) {
+            // A chest holding none of the wanted materials cannot hold any of the wanted keys.
+            if (!view.live() || view.snapshot() == null || !view.snapshot().hasMaterial(materials::contains)) {
+                continue;
+            }
+            for (String itemKey : itemKeys) {
+                long amount = view.snapshot().amount(itemKey);
+                if (amount > 0) {
+                    amounts.merge(itemKey, amount, Long::sum);
+                }
             }
         }
         return amounts;

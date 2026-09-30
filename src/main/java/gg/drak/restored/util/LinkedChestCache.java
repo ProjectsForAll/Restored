@@ -5,6 +5,7 @@ import gg.drak.restored.data.StoredStack;
 import org.bukkit.Bukkit;
 import org.bukkit.Chunk;
 import org.bukkit.Location;
+import org.bukkit.Material;
 import org.bukkit.World;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
@@ -39,6 +40,12 @@ public final class LinkedChestCache {
 
     private static final Map<String, Entry> ENTRIES = new ConcurrentHashMap<>();
     private static final Map<String, Set<String>> BY_CHUNK = new ConcurrentHashMap<>();
+    /**
+     * World name → packed chunk coordinates that hold at least one tracked location. Lets
+     * {@link #markDirtyAt(Location)}, which runs for every hopper move on the server, reject
+     * an untracked chunk without building a location key string.
+     */
+    private static final Map<String, Set<Long>> TRACKED_CHUNKS = new ConcurrentHashMap<>();
     private static volatile boolean keepChunksLoaded;
 
     private LinkedChestCache() {
@@ -57,8 +64,19 @@ public final class LinkedChestCache {
             int emptySlots,
             long totalItems,
             int blockCount,
-            long takenAt
+            long takenAt,
+            Set<Material> materials
     ) {
+        /** True when some stack in this chest passes {@code accept}; one test per material, not per stack. */
+        public boolean hasMaterial(java.util.function.Predicate<Material> accept) {
+            for (Material material : materials) {
+                if (accept.test(material)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
         public long amount(String itemKey) {
             StoredStack stack = totals.get(itemKey);
             return stack == null ? 0 : stack.getAmount();
@@ -117,6 +135,10 @@ public final class LinkedChestCache {
         }
     }
 
+    private static long packChunk(int chunkX, int chunkZ) {
+        return ((long) chunkX << 32) | (chunkZ & 0xFFFFFFFFL);
+    }
+
     private static String chunkId(String world, int chunkX, int chunkZ) {
         return world + ':' + chunkX + ':' + chunkZ;
     }
@@ -149,6 +171,8 @@ public final class LinkedChestCache {
             entry = ENTRIES.computeIfAbsent(key, k -> new Entry(k, world, x, z));
             entry.refs++;
             BY_CHUNK.computeIfAbsent(entry.chunkId(), c -> ConcurrentHashMap.newKeySet()).add(key);
+            TRACKED_CHUNKS.computeIfAbsent(world, w -> ConcurrentHashMap.newKeySet())
+                    .add(packChunk(entry.chunkX, entry.chunkZ));
             pin = entry.refs == 1 && keepChunksLoaded && location != null;
             if (pin) {
                 entry.ticketHeld = true;
@@ -176,6 +200,10 @@ public final class LinkedChestCache {
                 keys.remove(key);
                 if (keys.isEmpty()) {
                     BY_CHUNK.remove(entry.chunkId());
+                    Set<Long> chunks = TRACKED_CHUNKS.get(entry.world);
+                    if (chunks != null) {
+                        chunks.remove(packChunk(entry.chunkX, entry.chunkZ));
+                    }
                 }
             }
         }
@@ -254,6 +282,7 @@ public final class LinkedChestCache {
         int empty = 0;
         long total = 0;
         int maxStack = inventory.getMaxStackSize();
+        Set<Material> materials = java.util.EnumSet.noneOf(Material.class);
         ItemStack[] contents = inventory.getContents();
         for (int i = 0; i < contents.length; i++) {
             ItemStack slot = contents[i];
@@ -261,6 +290,7 @@ public final class LinkedChestCache {
                 empty++;
                 continue;
             }
+            materials.add(slot.getType());
             String itemKey = entry.keyAt(i, slot);
             int amount = slot.getAmount();
             total += amount;
@@ -283,7 +313,8 @@ public final class LinkedChestCache {
                 empty,
                 total,
                 blockCount,
-                System.currentTimeMillis());
+                System.currentTimeMillis(),
+                Collections.unmodifiableSet(materials));
         entry.snapshot = snapshot;
         return snapshot;
     }
@@ -317,11 +348,18 @@ public final class LinkedChestCache {
             return;
         }
         String name = world.getName();
-        int y = location.getBlockY();
         int x0 = (int) Math.floor(location.getX());
         int x1 = (int) Math.ceil(location.getX());
         int z0 = (int) Math.floor(location.getZ());
         int z1 = (int) Math.ceil(location.getZ());
+        // Hopper move events fire constantly across the whole server and almost none touch a
+        // tracked chunk, so bail out before building any key string.
+        Set<Long> chunks = TRACKED_CHUNKS.get(name);
+        if (chunks == null
+                || (!chunks.contains(packChunk(x0 >> 4, z0 >> 4)) && !chunks.contains(packChunk(x1 >> 4, z1 >> 4)))) {
+            return;
+        }
+        int y = location.getBlockY();
         markDirty(NetworkManager.locationKey(name, x0, y, z0));
         if (x1 != x0 || z1 != z0) {
             markDirty(NetworkManager.locationKey(name, x1, y, z1));
@@ -374,6 +412,7 @@ public final class LinkedChestCache {
         synchronized (ENTRIES) {
             ENTRIES.clear();
             BY_CHUNK.clear();
+            TRACKED_CHUNKS.clear();
         }
     }
 

@@ -610,6 +610,22 @@ public class Network {
         return amounts;
     }
 
+    /** {@link #getCombinedAmounts()} restricted to {@code itemKeys}, without merging everything else. */
+    public Map<String, Long> getCombinedAmountsFor(
+            java.util.Collection<String> itemKeys, java.util.Set<org.bukkit.Material> materials) {
+        Map<String, Long> amounts = new java.util.HashMap<>();
+        for (String itemKey : itemKeys) {
+            StoredStack stored = items.get(itemKey);
+            if (stored != null) {
+                amounts.put(itemKey, stored.getAmount());
+            }
+        }
+        for (Map.Entry<String, Long> entry : LinkedChestStorage.linkedAmountsFor(this, itemKeys, materials).entrySet()) {
+            amounts.merge(entry.getKey(), entry.getValue(), Long::sum);
+        }
+        return amounts;
+    }
+
     public ItemStack getCombinedTemplate(String itemKey) {
         if (itemKey == null) {
             return null;
