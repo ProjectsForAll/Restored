@@ -50,8 +50,8 @@ public class MagnetPocketAugmentListener implements Listener {
 
     private void tick() {
         for (Player player : Restored.getInstance().getServer().getOnlinePlayers()) {
-            // One inventory scan per player. hasActiveMagnet + findActiveLink used to walk
-            // the whole inventory twice, copying ItemMeta for every slot, every tick.
+            // A single inventory scan per player per run; this loop is the plugin's
+            // most frequent main-thread task (every magnet interval, for every player).
             if (findActiveLink(player) == null) {
                 continue;
             }

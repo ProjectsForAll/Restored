@@ -132,7 +132,7 @@ public final class PocketLinkItem {
     }
 
     public static UUID ensureLinkId(ItemStack stack) {
-        Optional<String> existing = ItemUtils.getTag(stack, Restored.getInstance(), TAG_LINK_ID);
+        Optional<String> existing = RestoredItems.readTag(stack, TAG_LINK_ID);
         if (existing.isPresent() && !existing.get().isBlank()) {
             try {
                 UUID id = UUID.fromString(existing.get());
@@ -150,7 +150,7 @@ public final class PocketLinkItem {
 
     public static Optional<UUID> getLinkId(ItemStack stack) {
         Optional<String> pdc = getPdcString(stack, TAG_LINK_ID);
-        Optional<String> raw = pdc.isPresent() ? pdc : ItemUtils.getTag(stack, Restored.getInstance(), TAG_LINK_ID);
+        Optional<String> raw = pdc.isPresent() ? pdc : RestoredItems.readTag(stack, TAG_LINK_ID);
         return raw.flatMap(UuidUtils::parse);
     }
 
@@ -209,7 +209,7 @@ public final class PocketLinkItem {
     }
 
     public static Set<PocketAugmentType> getInstalledAugments(ItemStack stack) {
-        Optional<String> raw = ItemUtils.getTag(stack, Restored.getInstance(), TAG_AUGMENTS);
+        Optional<String> raw = RestoredItems.readTag(stack, TAG_AUGMENTS);
         EnumSet<PocketAugmentType> set = EnumSet.noneOf(PocketAugmentType.class);
         if (raw.isEmpty() || raw.get().isBlank()) {
             return set;
@@ -259,7 +259,7 @@ public final class PocketLinkItem {
     }
 
     public static FeedFilterMode getFeedFilterMode(ItemStack stack) {
-        return parseEnum(ItemUtils.getTag(stack, Restored.getInstance(), TAG_FEED_MODE), FeedFilterMode.class, FeedFilterMode.BLACKLIST);
+        return parseEnum(RestoredItems.readTag(stack, TAG_FEED_MODE), FeedFilterMode.class, FeedFilterMode.BLACKLIST);
     }
 
     public static void setFeedFilterMode(ItemStack stack, FeedFilterMode mode) {
@@ -267,7 +267,7 @@ public final class PocketLinkItem {
     }
 
     public static FeedSortMode getFeedSortMode(ItemStack stack) {
-        return parseEnum(ItemUtils.getTag(stack, Restored.getInstance(), TAG_FEED_SORT), FeedSortMode.class, FeedSortMode.SLOT);
+        return parseEnum(RestoredItems.readTag(stack, TAG_FEED_SORT), FeedSortMode.class, FeedSortMode.SLOT);
     }
 
     public static void setFeedSortMode(ItemStack stack, FeedSortMode mode) {
@@ -275,7 +275,7 @@ public final class PocketLinkItem {
     }
 
     public static FeedSortDir getFeedSortDir(ItemStack stack) {
-        return parseEnum(ItemUtils.getTag(stack, Restored.getInstance(), TAG_FEED_DIR), FeedSortDir.class, FeedSortDir.DESCENDING);
+        return parseEnum(RestoredItems.readTag(stack, TAG_FEED_DIR), FeedSortDir.class, FeedSortDir.DESCENDING);
     }
 
     public static void setFeedSortDir(ItemStack stack, FeedSortDir dir) {
@@ -283,7 +283,7 @@ public final class PocketLinkItem {
     }
 
     public static FeedMetaMode getFeedMetaMode(ItemStack stack) {
-        return parseEnum(ItemUtils.getTag(stack, Restored.getInstance(), TAG_FEED_META), FeedMetaMode.class, FeedMetaMode.RESPECT);
+        return parseEnum(RestoredItems.readTag(stack, TAG_FEED_META), FeedMetaMode.class, FeedMetaMode.RESPECT);
     }
 
     public static void setFeedMetaMode(ItemStack stack, FeedMetaMode mode) {
@@ -295,7 +295,7 @@ public final class PocketLinkItem {
         for (int i = 0; i < FILTER_SLOTS; i++) {
             filters.add(null);
         }
-        Optional<String> raw = ItemUtils.getTag(stack, Restored.getInstance(), TAG_FEED_FILTERS);
+        Optional<String> raw = RestoredItems.readTag(stack, TAG_FEED_FILTERS);
         if (raw.isEmpty()) {
             return filters;
         }
@@ -328,7 +328,7 @@ public final class PocketLinkItem {
     }
 
     public static FeedFilterMode getQuiverFilterMode(ItemStack stack) {
-        return parseEnum(ItemUtils.getTag(stack, Restored.getInstance(), TAG_QUIVER_MODE), FeedFilterMode.class, FeedFilterMode.BLACKLIST);
+        return parseEnum(RestoredItems.readTag(stack, TAG_QUIVER_MODE), FeedFilterMode.class, FeedFilterMode.BLACKLIST);
     }
 
     public static void setQuiverFilterMode(ItemStack stack, FeedFilterMode mode) {
@@ -336,7 +336,7 @@ public final class PocketLinkItem {
     }
 
     public static FeedMetaMode getQuiverMetaMode(ItemStack stack) {
-        return parseEnum(ItemUtils.getTag(stack, Restored.getInstance(), TAG_QUIVER_META), FeedMetaMode.class, FeedMetaMode.RESPECT);
+        return parseEnum(RestoredItems.readTag(stack, TAG_QUIVER_META), FeedMetaMode.class, FeedMetaMode.RESPECT);
     }
 
     public static void setQuiverMetaMode(ItemStack stack, FeedMetaMode mode) {
@@ -352,7 +352,7 @@ public final class PocketLinkItem {
     }
 
     public static FeedFilterMode getRocketFilterMode(ItemStack stack) {
-        return parseEnum(ItemUtils.getTag(stack, Restored.getInstance(), TAG_ROCKET_MODE),
+        return parseEnum(RestoredItems.readTag(stack, TAG_ROCKET_MODE),
                 FeedFilterMode.class, FeedFilterMode.BLACKLIST);
     }
 
@@ -361,7 +361,7 @@ public final class PocketLinkItem {
     }
 
     public static FeedMetaMode getRocketMetaMode(ItemStack stack) {
-        return parseEnum(ItemUtils.getTag(stack, Restored.getInstance(), TAG_ROCKET_META),
+        return parseEnum(RestoredItems.readTag(stack, TAG_ROCKET_META),
                 FeedMetaMode.class, FeedMetaMode.RESPECT);
     }
 
@@ -382,7 +382,7 @@ public final class PocketLinkItem {
      * Zero is allowed and is useful as a temporary alternative to disabling the augment.
      */
     public static long getRocketKeepAmount(ItemStack stack) {
-        return ItemUtils.getTag(stack, Restored.getInstance(), TAG_ROCKET_KEEP_AMOUNT)
+        return RestoredItems.readTag(stack, TAG_ROCKET_KEEP_AMOUNT)
                 .map(value -> {
                     try {
                         return Math.max(0L, Math.min(2368L, Long.parseLong(value)));
@@ -423,7 +423,7 @@ public final class PocketLinkItem {
     }
 
     private static boolean getBoolean(ItemStack stack, String key, boolean fallback) {
-        return ItemUtils.getTag(stack, Restored.getInstance(), key)
+        return RestoredItems.readTag(stack, key)
                 .map(value -> {
                     if (value == null || value.isBlank()) {
                         return fallback;
@@ -446,7 +446,7 @@ public final class PocketLinkItem {
         for (int i = 0; i < FILTER_SLOTS; i++) {
             filters.add(null);
         }
-        Optional<String> raw = ItemUtils.getTag(stack, Restored.getInstance(), tag);
+        Optional<String> raw = RestoredItems.readTag(stack, tag);
         if (raw.isEmpty()) {
             return filters;
         }
@@ -483,7 +483,7 @@ public final class PocketLinkItem {
 
     public static ItemStack[] getBackpackContents(ItemStack stack) {
         ItemStack[] contents = new ItemStack[27];
-        Optional<String> raw = ItemUtils.getTag(stack, Restored.getInstance(), TAG_BACKPACK_CONTENTS);
+        Optional<String> raw = RestoredItems.readTag(stack, TAG_BACKPACK_CONTENTS);
         if (raw.isEmpty()) {
             return contents;
         }
@@ -522,11 +522,7 @@ public final class PocketLinkItem {
         if (stack == null || !stack.hasItemMeta()) {
             return Optional.empty();
         }
-        ItemMeta meta = stack.getItemMeta();
-        if (meta == null) {
-            return Optional.empty();
-        }
-        return Optional.ofNullable(meta.getPersistentDataContainer().get(namespacedKey(key), PersistentDataType.STRING));
+        return RestoredItems.readTag(stack, key);
     }
 
     private static void setPdcString(ItemStack stack, String key, String value) {

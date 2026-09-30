@@ -9,12 +9,15 @@ import org.bukkit.NamespacedKey;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.persistence.PersistentDataType;
+import io.papermc.paper.persistence.PersistentDataContainerView;
 
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 public final class RestoredItems {
 
@@ -35,17 +38,36 @@ public final class RestoredItems {
     public static final String TYPE_NETWORK_HOPPER_OUTPUT = "network_hopper_output";
     public static final String TYPE_MAGNET_CORE = "magnet_core";
 
+    private static final Map<String, NamespacedKey> KEYS = new ConcurrentHashMap<>();
+
     private RestoredItems() {
     }
 
     public static Optional<String> getType(ItemStack stack) {
-        // ItemUtils.getTag copies the whole ItemMeta. Restored items always carry meta, so
-        // this rejects ordinary stacks (nearly every slot in the inventory scans that run
-        // every tick) before any copy is made.
+        // Restored items always carry meta, so ordinary stacks (nearly every slot in the
+        // inventory scans that run every few ticks) are rejected before the PDC is read.
         if (stack == null || stack.getType().isAir() || !stack.hasItemMeta()) {
             return Optional.empty();
         }
-        return ItemUtils.getTag(stack, Restored.getInstance(), TAG_TYPE);
+        return readTag(stack, TAG_TYPE);
+    }
+
+    /**
+     * Reads one of Restored's string tags through Paper's read-only PDC view. Unlike
+     * {@code ItemUtils.getTag}, this does not copy the whole ItemMeta, which matters on the
+     * per-tick augment scans: an enchanted or named item's meta copy dominated them.
+     * Keys match {@code ItemUtils.setTag}, which uses {@code new NamespacedKey(plugin, key)}.
+     */
+    public static Optional<String> readTag(ItemStack stack, String key) {
+        if (stack == null || stack.getType().isAir()) {
+            return Optional.empty();
+        }
+        NamespacedKey namespaced = KEYS.computeIfAbsent(key, k -> new NamespacedKey(Restored.getInstance(), k));
+        PersistentDataContainerView pdc = stack.getPersistentDataContainer();
+        if (!pdc.has(namespaced, PersistentDataType.STRING)) {
+            return Optional.empty();
+        }
+        return Optional.ofNullable(pdc.get(namespaced, PersistentDataType.STRING));
     }
 
     public static boolean isType(ItemStack stack, String type) {
@@ -57,7 +79,7 @@ public final class RestoredItems {
     }
 
     public static Optional<UUID> getNetworkId(ItemStack stack) {
-        return ItemUtils.getTag(stack, Restored.getInstance(), TAG_NETWORK_ID)
+        return RestoredItems.readTag(stack, TAG_NETWORK_ID)
                 .flatMap(UuidUtils::parse);
     }
 
